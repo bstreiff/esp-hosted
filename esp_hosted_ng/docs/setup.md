@@ -81,6 +81,7 @@ Make sure that host machine is equipped with following:
         * <transport_layer> can be spi_only or spi+uart
 * Run the flashing command from _flashing_cmd.txt_ file.
 * Follow these steps to setup required configurations for desired transport layer [Transport layer configuration](#2-transport-layer-configuration)
+* **Please check this link for esp32c5 spi pre compiled libraries [c5 spi](../esp/esp_driver/network_adapter/c5_spi_binaries)**
 
 ### 1.3 ESP Comprehensive guide
 - **FOR linux based systems**.
@@ -141,6 +142,8 @@ directory
 ### 2.1 SPI configuration
 **Wi-Fi and Bluetooth over SPI**
 
+**NOTE this repository only for beta testing esp32c5 for esp hosted ng**
+
 | Supported Targets | ESP32 | ESP32-S2 | ESP32-S3 | ESP32-C2 | ESP32-C3 | ESP32-C5 | ESP32-C6 |
 | ----------------- | ----- | -------- | -------- |--------- |--------- |--------- |--------- |
 * Hardware setup
@@ -182,6 +185,7 @@ directory
          - add `ap_support` if you want to use interface as access point.
         * This script compiles and loads host driver on Raspberry-Pi. It also creates network interface `wlanX` which is used as a control interface for Wi-Fi on ESP peripheral
 
+    * **Please check this link for esp32c5 spi pre compiled libraries [c5 spi](../esp/esp_driver/network_adapter/c5_spi_binaries)**
     * For esp firmware if you are using [ESP Quick start guide](#12-esp-quick-start-guide)
         * Please flash the required binaries using with command mentioned in `flashing_cmd.txt` within desired transport configuration folder as explained in [ESP Quick start guide](#12-esp-quick-start-guide).  
         * Use minicom or any similar terminal emulator with baud rate 115200 to fetch esp side logs on UART
