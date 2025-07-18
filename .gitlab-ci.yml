@@ -249,7 +249,6 @@ deploy_esp32c5_github:
   image: $CI_DOCKER_REGISTRY/esp32-ci-env
   tags:
     - deploy
-  when: manual
   only:
     - feat/esp32c5_ng_beta_support
   script:
