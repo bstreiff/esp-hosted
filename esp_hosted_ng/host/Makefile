@@ -1,15 +1,9 @@
 # Toolchain and kernel
 CROSS_COMPILE :=
 KERNEL := /lib/modules/$(shell uname -r)/build
-ARCH := $(shell uname -m)
 
-# Normalize ARCH
-ifeq ($(ARCH), x86_64)
-    ARCH := x86
-endif
-ifeq ($(ARCH), aarch64)
-    ARCH := arm64
-endif
+include $(KERNEL)/scripts/subarch.include
+ARCH ?= $(SUBARCH)
 
 # Module name (default: sdio)
 target ?= sdio
