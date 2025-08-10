@@ -912,7 +912,7 @@ int esp_adjust_spi_clock(struct esp_adapter *adapter, u8 spi_clk_mhz)
 	return 0;
 }
 
-void esp_deinit_interface_layer(void)
+void esp_deinit_interface_layer(struct esp_adapter *adapter)
 {
 	sdio_unregister_driver(&esp_sdio_driver);
 }
