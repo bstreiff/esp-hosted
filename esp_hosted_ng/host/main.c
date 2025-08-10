@@ -1132,7 +1132,7 @@ static void __exit esp_exit(void)
 	}
 	clear_bit(ESP_DRIVER_ACTIVE, &adapter.state_flags);
 
-	esp_deinit_interface_layer();
+	esp_deinit_interface_layer(&adapter);
 	deinit_adapter();
 
 	if (resetpin != HOST_GPIO_PIN_INVALID) {

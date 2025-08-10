@@ -18,6 +18,6 @@ struct esp_if_ops {
 };
 
 int esp_init_interface_layer(struct esp_adapter *adapter, u32 speed);
-void esp_deinit_interface_layer(void);
+void esp_deinit_interface_layer(struct esp_adapter *adapter);
 
 #endif

@@ -34,15 +34,10 @@ struct esp_spi_context {
 	struct work_struct          spi_work;
 	struct workqueue_struct     *nw_cmd_reinit_workqueue;
 	struct work_struct          nw_cmd_reinit_work;
+	atomic_t                    tx_pending;
 	uint8_t                     spi_clk_mhz;
 	uint8_t                     reserved[2];
 	unsigned long               spi_flags;
 };
-
-enum {
-	CLOSE_DATAPATH,
-	OPEN_DATAPATH,
-};
-
 
 #endif
