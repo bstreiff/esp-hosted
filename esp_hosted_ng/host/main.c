@@ -54,17 +54,10 @@ MODULE_PARM_DESC(raw_tp_mode, "Mode choosed to test raw throughput");
 module_param(ota_file, charp, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 MODULE_PARM_DESC(ota_file, "Mode choosed to test raw throughput");
 
-static void deinit_adapter(void);
+static void deinit_adapter(struct esp_adapter *adapter);
 
 
 struct multicast_list mcast_list = {0};
-struct esp_adapter adapter;
-/*struct esp_device esp_dev;*/
-
-struct esp_adapter *esp_get_adapter(void)
-{
-	return &adapter;
-}
 
 void esp_process_new_packet_intr(struct esp_adapter *adapter)
 {
@@ -163,7 +156,7 @@ static int process_tx_packet(struct sk_buff *skb)
 	payload_header->offset = cpu_to_le16(pad_len);
 	payload_header->packet_type = PACKET_TYPE_DATA;
 
-	if (adapter.capabilities & ESP_CHECKSUM_ENABLED)
+	if (priv->adapter->capabilities & ESP_CHECKSUM_ENABLED)
 		payload_header->checksum = cpu_to_le16(compute_checksum(skb->data, (len + pad_len)));
 
 	if (!priv->stop_data) {
@@ -304,7 +297,7 @@ static int process_event_esp_bootup(struct esp_adapter *adapter, u8 *evt_buf, u8
 
 	clear_bit(ESP_INIT_DONE, &adapter->state_flags);
 	/* Deinit module if already initialized */
-	test_raw_tp_cleanup();
+	test_raw_tp_cleanup(adapter);
 	esp_deinit_module(adapter);
 
 	pos = evt_buf;
@@ -364,7 +357,7 @@ static int process_event_esp_bootup(struct esp_adapter *adapter, u8 *evt_buf, u8
 
 	if (raw_tp_mode !=0) {
 #if TEST_RAW_TP
-		process_test_capabilities(raw_tp_mode);
+		process_test_capabilities(adapter, raw_tp_mode);
 		esp_init_raw_tp(adapter);
 #else
 		esp_err("RAW TP mode selected but not enabled\n");
@@ -425,7 +418,9 @@ static int esp_set_mac_address(struct net_device *ndev, void *data)
 
 static void esp_set_rx_mode(struct net_device *ndev)
 {
-        struct esp_adapter *adapter = esp_get_adapter();
+	struct esp_wifi_device *priv = netdev_priv(ndev);
+
+        struct esp_adapter *adapter = priv->adapter;
 
 	schedule_work(&adapter->mac_flter_work);
 }
@@ -678,6 +673,7 @@ int esp_remove_card(struct esp_adapter *adapter)
 }
 
 struct esp_wifi_device *get_priv_from_payload_header(
+		struct esp_adapter *adapter,
 		struct esp_payload_header *header)
 {
 	struct esp_wifi_device *priv = NULL;
@@ -687,7 +683,7 @@ struct esp_wifi_device *get_priv_from_payload_header(
 		return NULL;
 
 	for (i = 0; i < ESP_MAX_INTERFACE; i++) {
-		priv = adapter.priv[i];
+		priv = adapter->priv[i];
 
 		if (!priv) {
 			esp_err("dropping pkt, driver not initialized\n");
@@ -788,7 +784,7 @@ static void process_rx_packet(struct esp_adapter *adapter, struct sk_buff *skb)
 	if (payload_header->if_type == ESP_STA_IF || payload_header->if_type == ESP_AP_IF) {
 
 		/* retrieve priv based on payload header contents */
-		priv = get_priv_from_payload_header(payload_header);
+		priv = get_priv_from_payload_header(adapter, payload_header);
 
 		if (!priv) {
 			dev_kfree_skb_any(skb);
@@ -849,7 +845,7 @@ static void process_rx_packet(struct esp_adapter *adapter, struct sk_buff *skb)
 	} else if (payload_header->if_type == ESP_TEST_IF) {
 #if TEST_RAW_TP
 		if (raw_tp_mode != 0) {
-			update_test_raw_tp_rx_stats(len);
+			update_test_raw_tp_rx_stats(adapter, len);
 		}
 #endif
 		dev_kfree_skb_any(skb);
@@ -974,13 +970,15 @@ int esp_send_packet(struct esp_adapter *adapter, struct sk_buff *skb)
 
 static void esp_if_rx_work(struct work_struct *work)
 {
+	struct esp_adapter *adapter = container_of(work, struct esp_adapter, if_rx_work);
+
 	/* read inbound packet and forward it to network/serial interface */
-	esp_get_packets(&adapter);
+	esp_get_packets(adapter);
 }
 
 static void update_mac_filter(struct work_struct *work)
 {
-	struct esp_adapter *adapter = esp_get_adapter();
+	struct esp_adapter *adapter = container_of(work, struct esp_adapter, mac_flter_work);
 	struct esp_wifi_device *priv = adapter->priv[0];
 	struct net_device *ndev;
 	struct netdev_hw_addr *mac_addr;
@@ -1018,58 +1016,59 @@ static void update_mac_filter(struct work_struct *work)
 
 static void esp_events_work(struct work_struct *work)
 {
+	struct esp_adapter *adapter = container_of(work, struct esp_adapter, events_work);
 	struct sk_buff *skb = NULL;
 
-	while ((skb = skb_dequeue(&adapter.events_skb_q)) != NULL) {
+	while ((skb = skb_dequeue(&adapter->events_skb_q)) != NULL) {
 		if (skb->data) {
-			process_internal_event(&adapter, skb);
+			process_internal_event(adapter, skb);
 		}
 		dev_kfree_skb_any(skb);
 	}
 }
 
-static struct esp_adapter *init_adapter(void)
+static int init_adapter(struct esp_adapter *adapter)
 {
-	memset(&adapter, 0, sizeof(adapter));
+	memset(adapter, 0, sizeof(*adapter));
 
 	/* Prepare interface RX work */
-	adapter.if_rx_workqueue = alloc_workqueue("ESP_IF_RX_WORK_QUEUE", 0, 0);
+	adapter->if_rx_workqueue = alloc_workqueue("ESP_IF_RX_WORK_QUEUE", 0, 0);
 
-	if (!adapter.if_rx_workqueue) {
-		deinit_adapter();
-		return NULL;
+	if (!adapter->if_rx_workqueue) {
+		deinit_adapter(adapter);
+		return -EFAULT;
 	}
 
-	INIT_WORK(&adapter.if_rx_work, esp_if_rx_work);
+	INIT_WORK(&adapter->if_rx_work, esp_if_rx_work);
 
-	skb_queue_head_init(&adapter.events_skb_q);
+	skb_queue_head_init(&adapter->events_skb_q);
 
-	adapter.events_wq = alloc_workqueue("ESP_EVENTS_WORKQUEUE", WQ_HIGHPRI, 0);
+	adapter->events_wq = alloc_workqueue("ESP_EVENTS_WORKQUEUE", WQ_HIGHPRI, 0);
 
-	if (!adapter.events_wq) {
-		deinit_adapter();
-		return NULL;
+	if (!adapter->events_wq) {
+		deinit_adapter(adapter);
+		return -EFAULT;
 	}
 
-	INIT_WORK(&adapter.events_work, esp_events_work);
+	INIT_WORK(&adapter->events_work, esp_events_work);
 
-	INIT_WORK(&adapter.mac_flter_work, update_mac_filter);
+	INIT_WORK(&adapter->mac_flter_work, update_mac_filter);
 
-	return &adapter;
+	return 0;
 }
 
-static void deinit_adapter(void)
+static void deinit_adapter(struct esp_adapter *adapter)
 {
-	if (adapter.if_context)
-		atomic_set(&adapter.state, ESP_CONTEXT_DISABLED);
+	if (adapter->if_context)
+		atomic_set(&adapter->state, ESP_CONTEXT_DISABLED);
 
-	skb_queue_purge(&adapter.events_skb_q);
+	skb_queue_purge(&adapter->events_skb_q);
 
-	if (adapter.events_wq)
-		destroy_workqueue(adapter.events_wq);
+	if (adapter->events_wq)
+		destroy_workqueue(adapter->events_wq);
 
-	if (adapter.if_rx_workqueue)
-		destroy_workqueue(adapter.if_rx_workqueue);
+	if (adapter->if_rx_workqueue)
+		destroy_workqueue(adapter->if_rx_workqueue);
 }
 
 static void esp_reset(void)
@@ -1097,25 +1096,49 @@ static void esp_reset(void)
 	}
 }
 
-static int __init esp_init(void)
-{
-	int ret = 0;
+struct esp_adapter *esp_adapter_create() {
 	struct esp_adapter *adapter = NULL;
 
 	/* Reset ESP, Clean start ESP */
 	esp_reset();
 	msleep(200);
 
-	adapter = init_adapter();
+	adapter = kzalloc(sizeof(*adapter), GFP_KERNEL);
+	if (!adapter)
+		return NULL;
+
+	init_adapter(adapter);
 
 	if (!adapter)
-		return -EFAULT;
+		return NULL;
 
-	/* Init transport layer */
-	ret = esp_init_interface_layer(adapter, clockspeed);
+	return adapter;
+}
+
+void esp_adapter_destroy(struct esp_adapter *adapter) {
+	uint8_t iface_idx = 0;
+#if TEST_RAW_TP
+	if (raw_tp_mode != 0) {
+		test_raw_tp_cleanup(adapter);
+	}
+#endif
+	for (iface_idx = 0; iface_idx < ESP_MAX_INTERFACE; iface_idx++) {
+		cmd_deinit_interface(adapter->priv[iface_idx]);
+	}
+	clear_bit(ESP_DRIVER_ACTIVE, &adapter->state_flags);
+
+	deinit_adapter(adapter);
+
+	if (resetpin != HOST_GPIO_PIN_INVALID) {
+		gpio_free(resetpin);
+	}
+}
+
+static int __init esp_init(void)
+{
+	int ret = esp_init_interface_layer();
 
 	if (ret != 0) {
-		deinit_adapter();
 		return ret;
 	}
 
@@ -1125,23 +1148,8 @@ static int __init esp_init(void)
 
 static void __exit esp_exit(void)
 {
-	uint8_t iface_idx = 0;
-#if TEST_RAW_TP
-	if (raw_tp_mode != 0) {
-		test_raw_tp_cleanup();
-	}
-#endif
-	for (iface_idx = 0; iface_idx < ESP_MAX_INTERFACE; iface_idx++) {
-		cmd_deinit_interface(adapter.priv[iface_idx]);
-	}
-	clear_bit(ESP_DRIVER_ACTIVE, &adapter.state_flags);
+	esp_deinit_interface_layer();
 
-	esp_deinit_interface_layer(&adapter);
-	deinit_adapter();
-
-	if (resetpin != HOST_GPIO_PIN_INVALID) {
-		gpio_free(resetpin);
-	}
 	debugfs_exit();
 }
 MODULE_LICENSE("GPL");

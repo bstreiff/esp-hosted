@@ -19,11 +19,13 @@
 		}                                                     \
 	} while (0);                                                  \
 
+struct esp_adapter *esp_adapter_create(void);
+void esp_adapter_destroy(struct esp_adapter *adapter);
+
 int esp_add_card(struct esp_adapter *adapter);
 int esp_remove_card(struct esp_adapter *adapter);
 void esp_process_new_packet_intr(struct esp_adapter *adapter);
-struct esp_adapter *esp_get_adapter(void);
-struct esp_wifi_device *get_priv_from_payload_header(struct esp_payload_header *header);
+struct esp_wifi_device *get_priv_from_payload_header(struct esp_adapter *adapter, struct esp_payload_header *header);
 struct sk_buff *esp_alloc_skb(u32 len);
 int esp_send_packet(struct esp_adapter *adapter, struct sk_buff *skb);
 u8 esp_is_bt_supported_over_sdio(u32 cap);
@@ -39,7 +41,7 @@ int esp_is_tx_queue_paused(struct esp_wifi_device *priv);
 int esp_deinit_module(struct esp_adapter *adapter);
 int esp_validate_chipset(struct esp_adapter *adapter, u8 chipset);
 int esp_adjust_spi_clock(struct esp_adapter *adapter, u8 spi_clk_mhz);
-void process_test_capabilities(u32 raw_tp_mode);
+void process_test_capabilities(struct esp_adapter *adapter, u32 raw_tp_mode);
 int esp_init_raw_tp(struct esp_adapter *adapter);
 bool esp_is_valid_hardware_id(int hardware_id);
 char *esp_get_hardware_name(int hardware_id);

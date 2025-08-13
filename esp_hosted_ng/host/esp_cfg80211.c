@@ -224,11 +224,10 @@ static int esp_pwr_to_dbm(int power)
 static int esp_inetaddr_event(struct notifier_block *nb,
 	unsigned long event, void *data)
 {
+	struct esp_wifi_device *esp_priv = container_of(nb, struct esp_wifi_device, nb);
 	struct in_ifaddr *ifa = data;
 	struct net_device *netdev = ifa->ifa_dev ? ifa->ifa_dev->dev : NULL;
 	struct esp_wifi_device *priv;
-	struct esp_adapter *adapter = esp_get_adapter();
-	struct esp_wifi_device *esp_priv = adapter->priv[0];
 
 	if (!netdev)
 		return 0;
@@ -683,7 +682,8 @@ static int esp_cfg80211_disassoc(struct wiphy *wiphy, struct net_device *dev,
 static int esp_cfg80211_suspend(struct wiphy *wiphy,
 			struct cfg80211_wowlan *wowlan)
 {
-	struct esp_adapter *adapter = esp_get_adapter();
+	struct esp_device *device = wiphy_priv(wiphy);
+	struct esp_adapter *adapter = device->adapter;
 	struct esp_wifi_device *priv = NULL;
 
 	if (!wiphy || !adapter) {
@@ -711,7 +711,8 @@ static int esp_cfg80211_suspend(struct wiphy *wiphy,
 
 static int esp_cfg80211_resume(struct wiphy *wiphy)
 {
-	struct esp_adapter *adapter = esp_get_adapter();
+	struct esp_device *device = wiphy_priv(wiphy);
+	struct esp_adapter *adapter = device->adapter;
 	struct esp_wifi_device *priv = NULL;
 	struct cfg80211_wowlan wowlan = {0};
 
@@ -740,7 +741,8 @@ static int esp_cfg80211_set_tx_power(struct wiphy *wiphy,
 				     struct wireless_dev *wdev,
 				     enum nl80211_tx_power_setting type, int mbm)
 {
-	struct esp_adapter *adapter = esp_get_adapter();
+	struct esp_device *device = wiphy_priv(wiphy);
+	struct esp_adapter *adapter = device->adapter;
 	struct esp_wifi_device *priv = NULL;
 
 	if (!wiphy || !adapter) {
@@ -1147,19 +1149,10 @@ static void esp_reg_notifier(struct wiphy *wiphy,
 {
 	struct esp_wifi_device *priv = NULL;
 	struct esp_device *esp_dev = NULL;
-	struct esp_adapter *adapter = esp_get_adapter();
+	struct esp_adapter *adapter = NULL;
 
 	if (!wiphy || !request) {
 		esp_info("%u invalid input\n", __LINE__);
-		return;
-	}
-
-	if (!test_bit(ESP_INIT_DONE, &adapter->state_flags)) {
-		esp_info("Driver init is ongoing\n");
-		return;
-	}
-	if (test_bit(ESP_CLEANUP_IN_PROGRESS, &adapter->state_flags)) {
-		esp_info("Driver cleanup is ongoing\n");
 		return;
 	}
 
@@ -1167,6 +1160,17 @@ static void esp_reg_notifier(struct wiphy *wiphy,
 
 	if (!esp_dev || !esp_dev->adapter) {
 		esp_info("%u esp_dev not initialized yet \n", __LINE__);
+		return;
+	}
+
+	adapter = esp_dev->adapter;
+
+	if (!test_bit(ESP_INIT_DONE, &adapter->state_flags)) {
+		esp_info("Driver init is ongoing\n");
+		return;
+	}
+	if (test_bit(ESP_CLEANUP_IN_PROGRESS, &adapter->state_flags)) {
+		esp_info("Driver cleanup is ongoing\n");
 		return;
 	}
 

@@ -19,10 +19,10 @@
 #define ESP_TEST_RAW_TP__RX      0
 #define ESP_TEST_RAW_TP__TX      1
 
-void esp_raw_tp_queue_resume(void);
+void esp_raw_tp_queue_resume(struct esp_adapter *adapter);
 #endif
 
-void test_raw_tp_cleanup(void);
-void update_test_raw_tp_rx_stats(u16 len);
+void test_raw_tp_cleanup(struct esp_adapter *adapter);
+void update_test_raw_tp_rx_stats(struct esp_adapter *adapter, u16 len);
 
 #endif
