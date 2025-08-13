@@ -45,7 +45,7 @@ static int raw_tp_tx_process(void *data)
 	int ret = 0;
 	struct sk_buff *tx_skb = NULL;
 	struct esp_payload_header *payload_header = NULL;
-	struct esp_adapter *adapter = NULL;
+	struct esp_adapter *adapter = (struct esp_adapter *)data;
 	struct esp_wifi_device *priv = NULL;
 	struct esp_skb_cb *cb = NULL;
 	u8 pad_len = 0;
@@ -56,7 +56,6 @@ static int raw_tp_tx_process(void *data)
 	pad_len += SKB_DATA_ADDR_ALIGNMENT - (total_len % SKB_DATA_ADDR_ALIGNMENT);
 
 	msleep(2000);
-	adapter = esp_get_adapter();
 	priv = adapter->priv[0];
 
 	while (!kthread_should_stop()) {
@@ -87,7 +86,7 @@ static int raw_tp_tx_process(void *data)
 					cpu_to_le16(compute_checksum(tx_skb->data,
 								(TEST_RAW_TP__BUF_SIZE + pad_len)));
 			}
-			ret = esp_send_packet(esp_get_adapter(), tx_skb);
+			ret = esp_send_packet(adapter, tx_skb);
 			if (!ret)
 				test_raw_tp_len += TEST_RAW_TP__BUF_SIZE;
 
@@ -100,9 +99,9 @@ static int raw_tp_tx_process(void *data)
 	return 0;
 }
 
-static void process_raw_tp_flags(void)
+static void process_raw_tp_flags(struct esp_adapter *adapter)
 {
-	test_raw_tp_cleanup();
+	test_raw_tp_cleanup(adapter);
 
 	if (test_raw_tp) {
 
@@ -112,7 +111,7 @@ static void process_raw_tp_flags(void)
 
 		if (test_raw_tp__host_to_esp) {
 
-			raw_tp_tx_thread = kthread_run(raw_tp_tx_process, NULL, "raw tp thrd");
+			raw_tp_tx_thread = kthread_run(raw_tp_tx_process, adapter, "raw tp thrd");
 			if (!raw_tp_tx_thread)
 				esp_err("Failed to create send traffic thread\n");
 
@@ -125,26 +124,26 @@ static void process_raw_tp_flags(void)
 }
 
 
-static void start_test_raw_tp(int raw_tp__host_to_esp)
+static void start_test_raw_tp(struct esp_adapter *adapter, int raw_tp__host_to_esp)
 {
 	test_raw_tp = 1;
 	test_raw_tp__host_to_esp = raw_tp__host_to_esp;
 }
 
-static void stop_test_raw_tp(void)
+static void stop_test_raw_tp(struct esp_adapter *adapter)
 {
 	test_raw_tp = 0;
 	test_raw_tp__host_to_esp = 0;
 }
 
-void esp_raw_tp_queue_resume(void)
+void esp_raw_tp_queue_resume(struct esp_adapter *adapter)
 {
 	if (traffic_open_init_done)
 		if (!completion_done(&traffic_open))
 			complete_all(&traffic_open);
 }
 
-void test_raw_tp_cleanup(void)
+void test_raw_tp_cleanup(struct esp_adapter *adapter)
 {
 	int ret = 0;
 
@@ -173,7 +172,7 @@ void test_raw_tp_cleanup(void)
 	}
 }
 
-void update_test_raw_tp_rx_stats(u16 len)
+void update_test_raw_tp_rx_stats(struct esp_adapter *adapter, u16 len)
 {
 	/* if traffic dir is esp to host, increment stats */
 	if (!test_raw_tp__host_to_esp)
@@ -181,17 +180,17 @@ void update_test_raw_tp_rx_stats(u16 len)
 }
 #endif
 
-void process_test_capabilities(u32 raw_tp_mode)
+void process_test_capabilities(struct esp_adapter *adapter, u32 raw_tp_mode)
 {
 #if TEST_RAW_TP
-	stop_test_raw_tp();
+	stop_test_raw_tp(adapter);
 	if (raw_tp_mode == ESP_TEST_RAW_TP_ESP_TO_HOST) {
-		start_test_raw_tp(ESP_TEST_RAW_TP__RX);
+		start_test_raw_tp(adapter, ESP_TEST_RAW_TP__RX);
 		esp_info("start testing of ESP->Host raw throughput\n");
 	} else if (raw_tp_mode == ESP_TEST_RAW_TP_HOST_TO_ESP) {
-		start_test_raw_tp(ESP_TEST_RAW_TP__TX);
+		start_test_raw_tp(adapter, ESP_TEST_RAW_TP__TX);
 		esp_info("start testing of Host->ESP raw throughput\n");
 	}
-	process_raw_tp_flags();
+	process_raw_tp_flags(adapter);
 #endif
 }

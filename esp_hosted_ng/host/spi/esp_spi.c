@@ -9,6 +9,7 @@
 #include <linux/mutex.h>
 #include <linux/delay.h>
 #include <linux/module.h>
+#include <linux/of.h>
 #include "esp_spi.h"
 #include "esp_if.h"
 #include "esp_api.h"
@@ -27,7 +28,7 @@ extern u32 raw_tp_mode;
 static struct sk_buff *read_packet(struct esp_adapter *adapter);
 static int write_packet(struct esp_adapter *adapter, struct sk_buff *skb);
 static void spi_exit(struct esp_spi_context *context);
-static int spi_init(struct esp_spi_context *context);
+static int spi_init(struct spi_device *spi, struct esp_spi_context *context);
 static void adjust_spi_clock(struct esp_spi_context *context, u8 spi_clk_mhz);
 
 volatile u8 host_sleep;
@@ -304,7 +305,7 @@ static void esp_spi_work(struct work_struct *work)
 					esp_tx_resume(cb->priv);
 #if TEST_RAW_TP
 					if (raw_tp_mode != 0) {
-						esp_raw_tp_queue_resume();
+						esp_raw_tp_queue_resume(context->adapter);
 					}
 #endif
 				}
@@ -371,84 +372,14 @@ static void esp_spi_work(struct work_struct *work)
 	mutex_unlock(&spi_lock);
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 16, 0))
-#include <linux/platform_device.h>
-static int __spi_controller_match(struct device *dev, const void *data)
-{
-	struct spi_controller *ctlr;
-	const u16 *bus_num = data;
-
-	ctlr = container_of(dev, struct spi_controller, dev);
-
-	if (!ctlr) {
-		return 0;
-	}
-
-	return ctlr->bus_num == *bus_num;
-}
-
-static struct spi_controller *spi_busnum_to_master(u16 bus_num)
-{
-	struct platform_device *pdev = NULL;
-	struct spi_master *master = NULL;
-	struct spi_controller *ctlr = NULL;
-	struct device *dev = NULL;
-
-	pdev = platform_device_alloc("pdev", PLATFORM_DEVID_NONE);
-	pdev->num_resources = 0;
-	platform_device_add(pdev);
-
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 91))
-	master = spi_alloc_host(&pdev->dev, sizeof(void *));
-#else
-	master = spi_alloc_master(&pdev->dev, sizeof(void *));
-#endif
-	if (!master) {
-		pr_err("Error: failed to allocate SPI master device\n");
-		platform_device_del(pdev);
-		platform_device_put(pdev);
-		return NULL;
-	}
-
-	dev = class_find_device(master->dev.class, NULL, &bus_num, __spi_controller_match);
-	if (dev) {
-		ctlr = container_of(dev, struct spi_controller, dev);
-	}
-
-	spi_master_put(master);
-	platform_device_del(pdev);
-	platform_device_put(pdev);
-
-	return ctlr;
-}
-#endif
-
-static int spi_dev_init(struct esp_spi_context *context, int spi_clk_mhz)
+static int spi_dev_init(struct spi_device *spi, struct esp_spi_context *context, int spi_clk_mhz)
 {
 	int status = 0;
-	struct spi_board_info esp_board = {{0}};
-	struct spi_master *master = NULL;
 
-	strscpy(esp_board.modalias, "esp_spi", sizeof(esp_board.modalias));
-	esp_board.mode = SPI_MODE_2;
-	esp_board.max_speed_hz = spi_clk_mhz * NUMBER_1M;
-	esp_board.bus_num = 0;
-	esp_board.chip_select = 0;
-
-	esp_info("Using SPI MODE %d\n", esp_board.mode);
-	master = spi_busnum_to_master(esp_board.bus_num);
-	if (!master) {
-		esp_err("Failed to obtain SPI master handle\n");
-		return -ENODEV;
-	}
+	spi_set_drvdata(spi, context);
 
 	set_bit(ESP_SPI_BUS_CLAIMED, &context->spi_flags);
-	context->esp_spi_dev = spi_new_device(master, &esp_board);
-
-	if (!context->esp_spi_dev) {
-		esp_err("Failed to add new SPI device\n");
-		return -ENODEV;
-	}
+	context->esp_spi_dev = spi;
 	context->adapter->dev = &context->esp_spi_dev->dev;
 
 	status = spi_setup(context->esp_spi_dev);
@@ -462,8 +393,8 @@ static int spi_dev_init(struct esp_spi_context *context, int spi_clk_mhz)
 		HANDSHAKE_PIN, SPI_DATA_READY_PIN);
 
 	esp_info("Config - SPI clock[%dMHz] bus[%d] cs[%d] mode[%d]\n",
-		context->spi_clk_mhz, esp_board.bus_num,
-		esp_board.chip_select, esp_board.mode);
+		context->spi_clk_mhz, spi->controller->bus_num,
+		(int)spi->chip_select, spi->mode);
 
 	set_bit(ESP_SPI_BUS_SET, &context->spi_flags);
 
@@ -528,7 +459,7 @@ static int spi_dev_init(struct esp_spi_context *context, int spi_clk_mhz)
 	return 0;
 }
 
-static int spi_init(struct esp_spi_context *context)
+static int spi_init(struct spi_device *spi, struct esp_spi_context *context)
 {
 	int status = 0;
 	uint8_t prio_q_idx = 0;
@@ -549,7 +480,7 @@ static int spi_init(struct esp_spi_context *context)
 		skb_queue_head_init(&context->rx_q[prio_q_idx]);
 	}
 
-	status = spi_dev_init(context, context->spi_clk_mhz);
+	status = spi_dev_init(spi, context, context->spi_clk_mhz);
 	if (status) {
 		spi_exit(context);
 		esp_err("Failed Init SPI device\n");
@@ -628,14 +559,6 @@ static void spi_exit(struct esp_spi_context *context)
 		esp_deinit_bt(context->adapter);
 
 	context->adapter->dev = NULL;
-
-	if (context->esp_spi_dev) {
-		spi_unregister_device(context->esp_spi_dev);
-		context->esp_spi_dev = NULL;
-		msleep(400);
-	}
-
-	memset(&context, 0, sizeof(context));
 }
 
 static void adjust_spi_clock(struct esp_spi_context *context, u8 spi_clk_mhz)
@@ -661,30 +584,36 @@ int generate_slave_intr(void *context, u8 data)
 	return 0;
 }
 
-int esp_init_interface_layer(struct esp_adapter *adapter, u32 speed)
+static int esp_spi_probe(struct spi_device *spi)
 {
 	struct esp_spi_context *context;
+	struct esp_adapter *adapter = esp_adapter_create();
 
-	if (!adapter)
-		return -EINVAL;
+	if (!adapter) {
+		esp_err("unable to create adapter\n");
+		return -EFAULT;
+	}
 
 	context = kzalloc(sizeof(*context), GFP_KERNEL);
+	if (!context) {
+		esp_err("unable to create context\n");
+		esp_adapter_destroy(adapter);
+		return -EFAULT;
+	}
 
 	adapter->if_context = context;
 	adapter->if_ops = &if_ops;
 	adapter->if_type = ESP_IF_TYPE_SPI;
 	context->adapter = adapter;
-	if (speed)
-		context->spi_clk_mhz = speed;
-	else
-		context->spi_clk_mhz = SPI_INITIAL_CLK_MHZ;
+	context->spi_clk_mhz = SPI_INITIAL_CLK_MHZ;
 
-	return spi_init(context);
+	return spi_init(spi, context);
 }
 
-void esp_deinit_interface_layer(struct esp_adapter *adapter)
+static void esp_spi_remove(struct spi_device *spi)
 {
-	struct esp_spi_context *context = (struct esp_spi_context *) adapter->if_context;
+	struct esp_spi_context *context = spi_get_drvdata(spi);
+	struct esp_adapter *adapter = context->adapter;
 
 	if (!adapter || !context)
 		return;
@@ -693,4 +622,40 @@ void esp_deinit_interface_layer(struct esp_adapter *adapter)
 
 	kfree(adapter->if_context);
 	adapter->if_context = NULL;
+
+	memset(&context, 0, sizeof(context));
+
+	esp_adapter_destroy(adapter);
+}
+
+static const struct of_device_id esp_spi_of_match[] = {
+	{ .compatible = "espressif,esp32", },
+	{},
+};
+MODULE_DEVICE_TABLE(of, esp_spi_of_match);
+
+static const struct spi_device_id esp_spi_ids[] = {
+	{ .name = "esp32", },
+	{},
+};
+MODULE_DEVICE_TABLE(spi, esp_spi_ids);
+
+static struct spi_driver esp_spi_driver = {
+	.driver = {
+		.name = KBUILD_MODNAME,
+		.of_match_table = of_match_ptr(esp_spi_of_match),
+	},
+	.probe = esp_spi_probe,
+	.remove = esp_spi_remove,
+	.id_table = esp_spi_ids,
+};
+
+int esp_init_interface_layer()
+{
+	return spi_register_driver(&esp_spi_driver);
+}
+
+void esp_deinit_interface_layer()
+{
+	return spi_unregister_driver(&esp_spi_driver);
 }

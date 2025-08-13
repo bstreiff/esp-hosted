@@ -38,7 +38,7 @@ static atomic_t queue_items[MAX_PRIORITY_QUEUES];
 struct task_struct *tx_thread;
 volatile u8 host_sleep;
 
-static int init_context(struct esp_sdio_context *context);
+static int init_context(struct esp_sdio_context *context, struct esp_adapter *adapter);
 static struct sk_buff *read_packet(struct esp_adapter *adapter);
 static int write_packet(struct esp_adapter *adapter, struct sk_buff *skb);
 /*int deinit_context(struct esp_adapter *adapter);*/
@@ -273,6 +273,7 @@ static void esp_remove(struct sdio_func *func)
 			}
 		}
 
+		esp_adapter_destroy(context->adapter);
 
 		if (context->func) {
 			deinit_sdio_func(context->func);
@@ -334,7 +335,7 @@ static int get_firmware_data(struct esp_sdio_context *context)
 	return ret;
 }
 
-static int init_context(struct esp_sdio_context *context)
+static int init_context(struct esp_sdio_context *context, struct esp_adapter *adapter)
 {
 	int ret = 0;
 	uint8_t prio_q_idx = 0;
@@ -343,14 +344,13 @@ static int init_context(struct esp_sdio_context *context)
 		return -EINVAL;
 	}
 
+	context->adapter = adapter;
+	adapter->if_context = context;
+	adapter->if_ops = &if_ops;
+
 	ret = get_firmware_data(context);
 	if (ret)
 		return ret;
-
-	context->adapter = esp_get_adapter();
-
-	if (unlikely(!context->adapter))
-		esp_err("Failed to get adapter\n");
 
 	for (prio_q_idx = 0; prio_q_idx < MAX_PRIORITY_QUEUES; prio_q_idx++) {
 		skb_queue_head_init(&(sdio_context.tx_q[prio_q_idx]));
@@ -613,7 +613,7 @@ static int tx_process(void *data)
 			esp_tx_resume(cb->priv);
 #if TEST_RAW_TP
 			if (raw_tp_mode != 0) {
-				esp_raw_tp_queue_resume();
+				esp_raw_tp_queue_resume(adapter);
 			}
 #endif
 		}
@@ -718,6 +718,7 @@ static int esp_probe(struct sdio_func *func,
 				  const struct sdio_device_id *id)
 {
 	struct esp_sdio_context *context = NULL;
+	struct esp_adapter *adapter = NULL;
 	int ret = 0;
 
 	if (func->num != 1) {
@@ -748,7 +749,14 @@ static int esp_probe(struct sdio_func *func,
 		host->ops->set_ios(host, &host->ios);
 	}
 
-	ret = init_context(context);
+	adapter = esp_adapter_create();
+	if (!adapter) {
+		esp_err("unable to create adapter\n");
+		return -EFAULT;
+	}
+
+
+	ret = init_context(context, adapter);
 	if (ret) {
 		deinit_sdio_func(func);
 		return ret;
@@ -865,15 +873,8 @@ static struct sdio_driver esp_sdio_driver = {
 	},
 };
 
-int esp_init_interface_layer(struct esp_adapter *adapter, u32 speed)
+int esp_init_interface_layer()
 {
-	if (!adapter)
-		return -EINVAL;
-
-	adapter->if_context = &sdio_context;
-	adapter->if_ops = &if_ops;
-	sdio_context.adapter = adapter;
-	sdio_context.sdio_clk_mhz = speed;
 
 	return sdio_register_driver(&esp_sdio_driver);
 }
@@ -912,7 +913,7 @@ int esp_adjust_spi_clock(struct esp_adapter *adapter, u8 spi_clk_mhz)
 	return 0;
 }
 
-void esp_deinit_interface_layer(struct esp_adapter *adapter)
+void esp_deinit_interface_layer()
 {
 	sdio_unregister_driver(&esp_sdio_driver);
 }
