@@ -15,6 +15,8 @@ struct esp_if_ops {
 	struct sk_buff* (*read)(struct esp_adapter *adapter);
 	int (*write)(struct esp_adapter *adapter, struct sk_buff *skb);
 	int (*deinit)(struct esp_adapter *adapter);
+
+	int (*adjust_spi_clock)(struct esp_adapter *adapter, u8 spi_clk_mhz);
 };
 
 int esp_init_interface_layer(void);

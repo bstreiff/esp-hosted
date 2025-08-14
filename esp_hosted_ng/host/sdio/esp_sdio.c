@@ -906,12 +906,6 @@ int esp_validate_chipset(struct esp_adapter *adapter, u8 chipset)
 	return ret;
 }
 
-int esp_adjust_spi_clock(struct esp_adapter *adapter, u8 spi_clk_mhz)
-{
-	/* SPI bus specific call, silently discard */
-	return 0;
-}
-
 void esp_deinit_interface_layer()
 {
 	sdio_unregister_driver(&esp_sdio_driver);

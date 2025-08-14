@@ -40,7 +40,6 @@ void process_capabilities(struct esp_adapter *adapter);
 int esp_is_tx_queue_paused(struct esp_wifi_device *priv);
 int esp_deinit_module(struct esp_adapter *adapter);
 int esp_validate_chipset(struct esp_adapter *adapter, u8 chipset);
-int esp_adjust_spi_clock(struct esp_adapter *adapter, u8 spi_clk_mhz);
 void process_test_capabilities(struct esp_adapter *adapter, u32 raw_tp_mode);
 int esp_init_raw_tp(struct esp_adapter *adapter);
 bool esp_is_valid_hardware_id(int hardware_id);
