@@ -17,6 +17,7 @@ struct esp_if_ops {
 	int (*deinit)(struct esp_adapter *adapter);
 
 	int (*adjust_spi_clock)(struct esp_adapter *adapter, u8 spi_clk_mhz);
+	int (*validate_chipset)(struct esp_adapter *adapter, u8 chipset);
 };
 
 int esp_init_interface_layer(void);
