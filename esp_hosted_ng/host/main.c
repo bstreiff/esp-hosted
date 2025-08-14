@@ -31,7 +31,6 @@
 #define RELEASE_VERSION PROJECT_NAME "-" STRINGIFY(PROJECT_VERSION_MAJOR_1) "." STRINGIFY(PROJECT_VERSION_MAJOR_2) "." STRINGIFY(PROJECT_VERSION_MINOR) "." STRINGIFY(PROJECT_REVISION_PATCH_1) "." STRINGIFY(PROJECT_REVISION_PATCH_2)
 
 static char *ota_file = NULL;
-static u32 clockspeed = 0;
 extern u8 ap_bssid[MAC_ADDR_LEN];
 extern volatile u8 host_sleep;
 u32 raw_tp_mode = 0;
@@ -39,9 +38,6 @@ int log_level = ESP_INFO;
 #define VERSION_BUFFER_SIZE 50
 char version_str[VERSION_BUFFER_SIZE];
 
-
-module_param(clockspeed, uint, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-MODULE_PARM_DESC(clockspeed, "Hosts clock speed in MHz");
 
 module_param(raw_tp_mode, uint, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 MODULE_PARM_DESC(raw_tp_mode, "Mode choosed to test raw throughput");
