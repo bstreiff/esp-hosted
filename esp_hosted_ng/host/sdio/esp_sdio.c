@@ -36,7 +36,6 @@ struct esp_sdio_context sdio_context;
 static atomic_t tx_pending;
 static atomic_t queue_items[MAX_PRIORITY_QUEUES];
 struct task_struct *tx_thread;
-volatile u8 host_sleep;
 
 static int init_context(struct esp_sdio_context *context, struct esp_adapter *adapter);
 static struct sk_buff *read_packet(struct esp_adapter *adapter);
@@ -74,9 +73,6 @@ static void esp_handle_isr(struct sdio_func *func)
 		return;
 	}
 
-	if (host_sleep)
-		return;
-
 	context = sdio_get_drvdata(func);
 
 	if (!(context) ||
@@ -84,6 +80,9 @@ static void esp_handle_isr(struct sdio_func *func)
 	    (atomic_read(&context->adapter->state) < ESP_CONTEXT_RX_READY)) {
 		return;
 	}
+
+	if (test_bit(ESP_HOST_SLEEP, &context->adapter->state_flags))
+		return;
 
 	int_status = kmalloc(sizeof(u32), GFP_ATOMIC);
 
@@ -569,7 +568,7 @@ static int tx_process(void *data)
 			continue;
 		}
 
-		if (host_sleep) {
+		if (test_bit(ESP_HOST_SLEEP, &context->adapter->state_flags)) {
 			/* TODO: Use wait_event_interruptible_timeout */
 			msleep(100);
 			continue;
@@ -798,7 +797,7 @@ static int esp_suspend(struct device *dev)
 		return -1;
 	}
 
-	host_sleep = 1;
+	set_bit(ESP_HOST_SLEEP, &context->adapter->state_flags);
 
 	generate_slave_intr(context, BIT(ESP_POWER_SAVE_ON));
 	msleep(10);
@@ -843,7 +842,7 @@ static int esp_resume(struct device *dev)
 	get_firmware_data(context);
 	msleep(100);
 	generate_slave_intr(context, BIT(ESP_POWER_SAVE_OFF));
-	host_sleep = 0;
+	clear_bit(ESP_HOST_SLEEP, &context->adapter->state_flags);
 	return 0;
 }
 

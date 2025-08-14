@@ -69,6 +69,7 @@ enum adapter_flags_e {
 	ESP_DRIVER_ACTIVE,          /* kernel module __exit is not yet invoked */
 	ESP_INIT_DONE,              /* Driver init done */
 	ESP_OTA_IN_PROGRESS,        /* Firmware OTA in progress */
+	ESP_HOST_SLEEP,             /* In host sleep */
 };
 
 enum priv_flags_e {

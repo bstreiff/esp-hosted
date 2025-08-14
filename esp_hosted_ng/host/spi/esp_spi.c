@@ -31,8 +31,6 @@ static void spi_exit(struct esp_spi_context *context);
 static int spi_init(struct spi_device *spi, struct esp_spi_context *context);
 static int adjust_spi_clock(struct esp_adapter *adapter, u8 spi_clk_mhz);
 
-volatile u8 host_sleep;
-
 static struct esp_if_ops if_ops = {
 	.read		= read_packet,
 	.write		= write_packet,
