@@ -29,13 +29,14 @@ static struct sk_buff *read_packet(struct esp_adapter *adapter);
 static int write_packet(struct esp_adapter *adapter, struct sk_buff *skb);
 static void spi_exit(struct esp_spi_context *context);
 static int spi_init(struct spi_device *spi, struct esp_spi_context *context);
-static void adjust_spi_clock(struct esp_spi_context *context, u8 spi_clk_mhz);
+static int adjust_spi_clock(struct esp_adapter *adapter, u8 spi_clk_mhz);
 
 volatile u8 host_sleep;
 
 static struct esp_if_ops if_ops = {
 	.read		= read_packet,
 	.write		= write_packet,
+	.adjust_spi_clock = adjust_spi_clock,
 };
 
 static DEFINE_MUTEX(spi_lock);
@@ -314,7 +315,7 @@ static void esp_spi_work(struct work_struct *work)
 
 		if (rx_pending || tx_skb) {
 			memset(&trans, 0, sizeof(trans));
-			trans.speed_hz = context->spi_clk_mhz * NUMBER_1M;
+			trans.speed_hz = context->speed_hz;
 
 			/* Setup and execute SPI transaction
 			 *	Tx_buf: Check if tx_q has valid buffer for transmission,
@@ -372,7 +373,7 @@ static void esp_spi_work(struct work_struct *work)
 	mutex_unlock(&spi_lock);
 }
 
-static int spi_dev_init(struct spi_device *spi, struct esp_spi_context *context, int spi_clk_mhz)
+static int spi_dev_init(struct spi_device *spi, struct esp_spi_context *context)
 {
 	int status = 0;
 
@@ -388,8 +389,8 @@ static int spi_dev_init(struct spi_device *spi, struct esp_spi_context *context,
 		return status;
 	}
 
-	esp_info("Config - SPI clock[%dMHz] bus[%d] cs[%d] mode[%d]\n",
-		context->spi_clk_mhz, spi->controller->bus_num,
+	esp_info("Config - SPI clock[%u Hz] bus[%d] cs[%d] mode[%d]\n",
+		context->speed_hz, spi->controller->bus_num,
 		(int)spi->chip_select, spi->mode);
 
 	set_bit(ESP_SPI_BUS_SET, &context->spi_flags);
@@ -464,7 +465,7 @@ static int spi_init(struct spi_device *spi, struct esp_spi_context *context)
 		skb_queue_head_init(&context->rx_q[prio_q_idx]);
 	}
 
-	status = spi_dev_init(spi, context, context->spi_clk_mhz);
+	status = spi_dev_init(spi, context);
 	if (status) {
 		spi_exit(context);
 		esp_err("Failed Init SPI device\n");
@@ -545,20 +546,19 @@ static void spi_exit(struct esp_spi_context *context)
 	context->adapter->dev = NULL;
 }
 
-static void adjust_spi_clock(struct esp_spi_context *context, u8 spi_clk_mhz)
-{
-	if ((spi_clk_mhz) && (spi_clk_mhz != context->spi_clk_mhz)) {
-		esp_info("ESP Reconfigure SPI CLK to %u MHz\n", spi_clk_mhz);
-		context->spi_clk_mhz = spi_clk_mhz;
-		context->esp_spi_dev->max_speed_hz = spi_clk_mhz * NUMBER_1M;
-	}
-}
-
-int esp_adjust_spi_clock(struct esp_adapter *adapter, u8 spi_clk_mhz)
+static int adjust_spi_clock(struct esp_adapter *adapter, u8 spi_clk_mhz)
 {
 	struct esp_spi_context *context = (struct esp_spi_context *) adapter->if_context;
+	struct spi_device *spi = context->esp_spi_dev;
 
-	adjust_spi_clock(context, spi_clk_mhz);
+	if (spi_clk_mhz && (context->speed_hz != (spi_clk_mhz * NUMBER_1M))) {
+		esp_info("ESP Reconfigure SPI CLK to %u MHz\n", spi_clk_mhz);
+		context->speed_hz = spi_clk_mhz * NUMBER_1M;
+		if (spi->max_speed_hz && (context->speed_hz > spi->max_speed_hz)) {
+			esp_info("Limiting to %u Hz\n", spi->max_speed_hz);
+			context->speed_hz = spi->max_speed_hz;
+		}
+	}
 
 	return 0;
 }
@@ -589,7 +589,9 @@ static int esp_spi_probe(struct spi_device *spi)
 	adapter->if_ops = &if_ops;
 	adapter->if_type = ESP_IF_TYPE_SPI;
 	context->adapter = adapter;
-	context->spi_clk_mhz = SPI_INITIAL_CLK_MHZ;
+	context->speed_hz = SPI_INITIAL_CLK_MHZ * NUMBER_1M;
+	if (spi->max_speed_hz && (context->speed_hz > spi->max_speed_hz))
+		context->speed_hz = spi->max_speed_hz;
 
 	return spi_init(spi, context);
 }

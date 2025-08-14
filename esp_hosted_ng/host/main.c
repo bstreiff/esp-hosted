@@ -314,7 +314,8 @@ static int process_event_esp_bootup(struct esp_adapter *adapter, u8 *evt_buf, u8
 			ret = process_fw_data(fw_p, tag_len);
 			break;
 		case ESP_BOOTUP_SPI_CLK_MHZ:
-			ret = esp_adjust_spi_clock(adapter, *(pos + 2));
+			if (adapter->if_ops && adapter->if_ops->adjust_spi_clock)
+				ret = adapter->if_ops->adjust_spi_clock(adapter, *(pos + 2));
 			break;
 		default:
 			esp_warn("Unsupported tag=%x in bootup event\n", *pos);

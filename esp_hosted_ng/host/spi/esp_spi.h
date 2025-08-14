@@ -31,8 +31,7 @@ struct esp_spi_context {
 	struct workqueue_struct     *nw_cmd_reinit_workqueue;
 	struct work_struct          nw_cmd_reinit_work;
 	atomic_t                    tx_pending;
-	uint8_t                     spi_clk_mhz;
-	uint8_t                     reserved[2];
+	uint32_t                    speed_hz;
 	unsigned long               spi_flags;
 	struct gpio_desc            *handshake_gpio;
 	struct gpio_desc            *dataready_gpio;
