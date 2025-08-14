@@ -32,7 +32,6 @@
 
 static char *ota_file = NULL;
 extern u8 ap_bssid[MAC_ADDR_LEN];
-extern volatile u8 host_sleep;
 u32 raw_tp_mode = 0;
 int log_level = ESP_INFO;
 #define VERSION_BUFFER_SIZE 50
@@ -85,7 +84,7 @@ static int process_tx_packet(struct sk_buff *skb)
 		return NETDEV_TX_BUSY;
 	}
 
-	if (host_sleep) {
+	if (test_bit(ESP_HOST_SLEEP, &priv->adapter->state_flags)) {
 		return NETDEV_TX_BUSY;
 	}
 
