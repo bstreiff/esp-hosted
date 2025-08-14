@@ -5,7 +5,7 @@
  */
 #include "utils.h"
 #include <linux/spi/spi.h>
-#include <linux/gpio.h>
+#include <linux/gpio/consumer.h>
 #include <linux/mutex.h>
 #include <linux/delay.h>
 #include <linux/module.h>
@@ -285,8 +285,8 @@ static void esp_spi_work(struct work_struct *work)
 
 	mutex_lock(&spi_lock);
 
-	trans_ready = gpio_get_value(HANDSHAKE_PIN);
-	rx_pending = gpio_get_value(SPI_DATA_READY_PIN);
+	trans_ready = gpiod_get_value(context->handshake_gpio);
+	rx_pending = gpiod_get_value(context->dataready_gpio);
 
 	if (trans_ready) {
 		if (test_bit(ESP_SPI_DATAPATH_OPEN, &context->spi_flags)) {
@@ -380,7 +380,6 @@ static int spi_dev_init(struct spi_device *spi, struct esp_spi_context *context,
 
 	set_bit(ESP_SPI_BUS_CLAIMED, &context->spi_flags);
 	context->esp_spi_dev = spi;
-	context->adapter->dev = &context->esp_spi_dev->dev;
 
 	status = spi_setup(context->esp_spi_dev);
 
@@ -389,70 +388,55 @@ static int spi_dev_init(struct spi_device *spi, struct esp_spi_context *context,
 		return status;
 	}
 
-	esp_info("Config - SPI GPIOs: Handshake[%d] Dataready[%d]\n",
-		HANDSHAKE_PIN, SPI_DATA_READY_PIN);
-
 	esp_info("Config - SPI clock[%dMHz] bus[%d] cs[%d] mode[%d]\n",
 		context->spi_clk_mhz, spi->controller->bus_num,
 		(int)spi->chip_select, spi->mode);
 
 	set_bit(ESP_SPI_BUS_SET, &context->spi_flags);
 
-	status = gpio_request(HANDSHAKE_PIN, "SPI_HANDSHAKE_PIN");
-
-	if (status) {
+	context->handshake_gpio = gpiod_get(&spi->dev, "handshake", GPIOD_IN);
+	if (IS_ERR(context->handshake_gpio)) {
+		status = PTR_ERR(context->handshake_gpio);
 		esp_err("Failed to obtain GPIO for Handshake pin, err:%d\n", status);
 		return status;
 	}
 
-	status = gpio_direction_input(HANDSHAKE_PIN);
-
-	if (status) {
-		gpio_free(HANDSHAKE_PIN);
-		esp_err("Failed to set GPIO direction of Handshake pin, err: %d\n", status);
-		return status;
-	}
 	set_bit(ESP_SPI_GPIO_HS_REQUESTED, &context->spi_flags);
 
-	status = request_irq(SPI_IRQ, spi_interrupt_handler,
+	status = request_irq(gpiod_to_irq(context->handshake_gpio), spi_interrupt_handler,
 			IRQF_SHARED | IRQF_TRIGGER_RISING,
-			"ESP_SPI", context);
+			"esp32 handshake", context);
 	if (status) {
-		gpio_free(HANDSHAKE_PIN);
 		esp_err("Failed to request IRQ for Handshake pin, err:%d\n", status);
 		return status;
 	}
 	set_bit(ESP_SPI_GPIO_HS_IRQ_DONE, &context->spi_flags);
 
-	status = gpio_request(SPI_DATA_READY_PIN, "SPI_DATA_READY_PIN");
-	if (status) {
-		gpio_free(HANDSHAKE_PIN);
-		free_irq(SPI_IRQ, context);
+	context->dataready_gpio = gpiod_get(&spi->dev, "dataready", GPIOD_IN);
+	if (IS_ERR(context->dataready_gpio)) {
+		status = PTR_ERR(context->dataready_gpio);
+		free_irq(gpiod_to_irq(context->handshake_gpio), context);
+		gpiod_put(context->handshake_gpio);
 		esp_err("Failed to obtain GPIO for Data ready pin, err:%d\n", status);
 		return status;
 	}
 	set_bit(ESP_SPI_GPIO_DR_REQUESTED, &context->spi_flags);
 
-	status = gpio_direction_input(SPI_DATA_READY_PIN);
-	if (status) {
-		gpio_free(HANDSHAKE_PIN);
-		free_irq(SPI_IRQ, context);
-		gpio_free(SPI_DATA_READY_PIN);
-		esp_err("Failed to set GPIO direction of Data ready pin\n");
-		return status;
-	}
-
-	status = request_irq(SPI_DATA_READY_IRQ, spi_data_ready_interrupt_handler,
+	status = request_irq(gpiod_to_irq(context->dataready_gpio), spi_data_ready_interrupt_handler,
 			IRQF_SHARED | IRQF_TRIGGER_RISING,
-			"ESP_SPI_DATA_READY", context);
+			"esp32 dataready", context);
 	if (status) {
-		gpio_free(HANDSHAKE_PIN);
-		free_irq(SPI_IRQ, context);
-		gpio_free(SPI_DATA_READY_PIN);
+		gpiod_put(context->dataready_gpio);
+		free_irq(gpiod_to_irq(context->handshake_gpio), context);
+		gpiod_put(context->handshake_gpio);
 		esp_err("Failed to request IRQ for Data ready pin, err:%d\n", status);
 		return status;
 	}
 	set_bit(ESP_SPI_GPIO_DR_IRQ_DONE, &context->spi_flags);
+
+	esp_info("Config - SPI GPIOs: Handshake[%d] Dataready[%d]\n",
+		desc_to_gpio(context->handshake_gpio),
+		desc_to_gpio(context->dataready_gpio));
 
 	open_data_path(context);
 
@@ -503,22 +487,22 @@ static int spi_init(struct spi_device *spi, struct esp_spi_context *context)
 static void cleanup_spi_gpio(struct esp_spi_context *context)
 {
 	if (test_bit(ESP_SPI_GPIO_HS_IRQ_DONE, &context->spi_flags)) {
-		free_irq(SPI_IRQ, context);
+		free_irq(gpiod_to_irq(context->handshake_gpio), context);
 		clear_bit(ESP_SPI_GPIO_HS_IRQ_DONE, &context->spi_flags);
 	}
 
 	if (test_bit(ESP_SPI_GPIO_DR_IRQ_DONE, &context->spi_flags)) {
-		free_irq(SPI_DATA_READY_IRQ, context);
+		free_irq(gpiod_to_irq(context->dataready_gpio), context);
 		clear_bit(ESP_SPI_GPIO_DR_IRQ_DONE, &context->spi_flags);
 	}
 
 	if (test_bit(ESP_SPI_GPIO_DR_REQUESTED, &context->spi_flags)) {
-		gpio_free(SPI_DATA_READY_PIN);
+		gpiod_put(context->dataready_gpio);
 		clear_bit(ESP_SPI_GPIO_DR_REQUESTED, &context->spi_flags);
 	}
 
 	if (test_bit(ESP_SPI_GPIO_HS_REQUESTED, &context->spi_flags)) {
-		gpio_free(HANDSHAKE_PIN);
+		gpiod_put(context->handshake_gpio);
 		clear_bit(ESP_SPI_GPIO_HS_REQUESTED, &context->spi_flags);
 	}
 }
@@ -530,11 +514,11 @@ static void spi_exit(struct esp_spi_context *context)
 		atomic_set(&context->adapter->state, ESP_CONTEXT_DISABLED);
 
 	if (test_bit(ESP_SPI_GPIO_HS_IRQ_DONE, &context->spi_flags)) {
-		disable_irq(SPI_IRQ);
+		disable_irq(gpiod_to_irq(context->handshake_gpio));
 	}
 
 	if (test_bit(ESP_SPI_GPIO_DR_IRQ_DONE, &context->spi_flags)) {
-		disable_irq(SPI_DATA_READY_IRQ);
+		disable_irq(gpiod_to_irq(context->dataready_gpio));
 	}
 
 	close_data_path(context);
@@ -587,7 +571,7 @@ int generate_slave_intr(void *context, u8 data)
 static int esp_spi_probe(struct spi_device *spi)
 {
 	struct esp_spi_context *context;
-	struct esp_adapter *adapter = esp_adapter_create();
+	struct esp_adapter *adapter = esp_adapter_create(&spi->dev);
 
 	if (!adapter) {
 		esp_err("unable to create adapter\n");

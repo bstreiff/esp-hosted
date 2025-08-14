@@ -23,7 +23,6 @@
 #include "esp_cfg80211.h"
 #include "esp_stats.h"
 
-#define HOST_GPIO_PIN_INVALID -1
 #define CONFIG_ALLOW_MULTICAST_WAKEUP 1
 
 #define STRINGIFY_HELPER(x) #x
@@ -32,7 +31,6 @@
 #define RELEASE_VERSION PROJECT_NAME "-" STRINGIFY(PROJECT_VERSION_MAJOR_1) "." STRINGIFY(PROJECT_VERSION_MAJOR_2) "." STRINGIFY(PROJECT_VERSION_MINOR) "." STRINGIFY(PROJECT_REVISION_PATCH_1) "." STRINGIFY(PROJECT_REVISION_PATCH_2)
 
 static char *ota_file = NULL;
-static int resetpin = HOST_GPIO_PIN_INVALID;
 static u32 clockspeed = 0;
 extern u8 ap_bssid[MAC_ADDR_LEN];
 extern volatile u8 host_sleep;
@@ -41,9 +39,6 @@ int log_level = ESP_INFO;
 #define VERSION_BUFFER_SIZE 50
 char version_str[VERSION_BUFFER_SIZE];
 
-
-module_param(resetpin, int, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-MODULE_PARM_DESC(resetpin, "Host's GPIO pin number which is connected to ESP32's EN to reset ESP32 device");
 
 module_param(clockspeed, uint, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 MODULE_PARM_DESC(clockspeed, "Hosts clock speed in MHz");
@@ -1023,9 +1018,13 @@ static void esp_events_work(struct work_struct *work)
 	}
 }
 
-static int init_adapter(struct esp_adapter *adapter)
+static int init_adapter(struct esp_adapter *adapter, struct device *dev)
 {
+	int ret;
+
 	memset(adapter, 0, sizeof(*adapter));
+
+	adapter->dev = dev;
 
 	/* Prepare interface RX work */
 	adapter->if_rx_workqueue = alloc_workqueue("ESP_IF_RX_WORK_QUEUE", 0, 0);
@@ -1050,11 +1049,22 @@ static int init_adapter(struct esp_adapter *adapter)
 
 	INIT_WORK(&adapter->mac_flter_work, update_mac_filter);
 
+	adapter->reset_gpio = gpiod_get_optional(adapter->dev, "reset", GPIOD_OUT_HIGH);
+	if (IS_ERR(adapter->reset_gpio)) {
+		ret = PTR_ERR(adapter->reset_gpio);
+		esp_err("Failed to obtain reset GPIO, err: %d\n", ret);
+		adapter->reset_gpio = NULL;
+		return ret;
+	}
+
 	return 0;
 }
 
 static void deinit_adapter(struct esp_adapter *adapter)
 {
+	if (adapter->reset_gpio)
+		gpiod_put(adapter->reset_gpio);
+
 	if (adapter->if_context)
 		atomic_set(&adapter->state, ESP_CONTEXT_DISABLED);
 
@@ -1067,46 +1077,33 @@ static void deinit_adapter(struct esp_adapter *adapter)
 		destroy_workqueue(adapter->if_rx_workqueue);
 }
 
-static void esp_reset(void)
+static void esp_reset(struct esp_adapter *adapter)
 {
-	if (resetpin != HOST_GPIO_PIN_INVALID) {
-		/* Check valid GPIO or not */
-		if (!gpio_is_valid(resetpin)) {
-			esp_warn("host resetpin (%d) configured is invalid GPIO\n", resetpin);
-			resetpin = HOST_GPIO_PIN_INVALID;
-		} else {
-			gpio_request(resetpin, "sysfs");
+	if (adapter->reset_gpio) {
+		esp_dbg("Triggering ESP reset.\n");
 
-			/* HOST's resetpin set to OUTPUT, HIGH */
-			gpio_direction_output(resetpin, true);
-
-			/* HOST's resetpin set to LOW */
-			gpio_set_value(resetpin, 0);
-			udelay(200);
-
-			/* HOST's resetpin set to INPUT */
-			gpio_direction_input(resetpin);
-
-			esp_dbg("Triggering ESP reset.\n");
-		}
+		/* set active (low) */
+		gpiod_set_value(adapter->reset_gpio, 1);
+		udelay(200);
+		gpiod_set_value(adapter->reset_gpio, 0);
 	}
 }
 
-struct esp_adapter *esp_adapter_create() {
+struct esp_adapter *esp_adapter_create(struct device *dev) {
 	struct esp_adapter *adapter = NULL;
-
-	/* Reset ESP, Clean start ESP */
-	esp_reset();
-	msleep(200);
 
 	adapter = kzalloc(sizeof(*adapter), GFP_KERNEL);
 	if (!adapter)
 		return NULL;
 
-	init_adapter(adapter);
+	init_adapter(adapter, dev);
 
 	if (!adapter)
 		return NULL;
+
+	/* Reset ESP, Clean start ESP */
+	esp_reset(adapter);
+	msleep(200);
 
 	return adapter;
 }
@@ -1124,10 +1121,6 @@ void esp_adapter_destroy(struct esp_adapter *adapter) {
 	clear_bit(ESP_DRIVER_ACTIVE, &adapter->state_flags);
 
 	deinit_adapter(adapter);
-
-	if (resetpin != HOST_GPIO_PIN_INVALID) {
-		gpio_free(resetpin);
-	}
 }
 
 static int __init esp_init(void)

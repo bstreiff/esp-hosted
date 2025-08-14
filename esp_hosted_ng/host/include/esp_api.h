@@ -19,7 +19,7 @@
 		}                                                     \
 	} while (0);                                                  \
 
-struct esp_adapter *esp_adapter_create(void);
+struct esp_adapter *esp_adapter_create(struct device *dev);
 void esp_adapter_destroy(struct esp_adapter *adapter);
 
 int esp_add_card(struct esp_adapter *adapter);

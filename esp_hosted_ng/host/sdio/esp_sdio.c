@@ -749,7 +749,7 @@ static int esp_probe(struct sdio_func *func,
 		host->ops->set_ios(host, &host->ios);
 	}
 
-	adapter = esp_adapter_create();
+	adapter = esp_adapter_create(&func->dev);
 	if (!adapter) {
 		esp_err("unable to create adapter\n");
 		return -EFAULT;
@@ -767,7 +767,6 @@ static int esp_probe(struct sdio_func *func,
 	if (!tx_thread)
 		esp_err("Failed to create esp_sdio TX thread\n");
 
-	context->adapter->dev = &func->dev;
 	atomic_set(&context->adapter->state, ESP_CONTEXT_RX_READY);
 	generate_slave_intr(context, BIT(ESP_OPEN_DATA_PATH));
 

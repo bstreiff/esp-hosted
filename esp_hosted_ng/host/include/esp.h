@@ -128,6 +128,8 @@ struct esp_adapter {
 
 	unsigned long           state_flags;
 	int                     chipset;
+
+	struct gpio_desc	*reset_gpio;
 };
 
 struct esp_device {
