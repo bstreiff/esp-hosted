@@ -30,11 +30,13 @@ static int write_packet(struct esp_adapter *adapter, struct sk_buff *skb);
 static void spi_exit(struct esp_spi_context *context);
 static int spi_init(struct spi_device *spi, struct esp_spi_context *context);
 static int adjust_spi_clock(struct esp_adapter *adapter, u8 spi_clk_mhz);
+static int validate_chipset(struct esp_adapter *adapter, u8 chipset);
 
 static struct esp_if_ops if_ops = {
 	.read		= read_packet,
 	.write		= write_packet,
 	.adjust_spi_clock = adjust_spi_clock,
+	.validate_chipset = validate_chipset,
 };
 
 static DEFINE_MUTEX(spi_lock);
@@ -160,7 +162,7 @@ static int write_packet(struct esp_adapter *adapter, struct sk_buff *skb)
 	return 0;
 }
 
-int esp_validate_chipset(struct esp_adapter *adapter, u8 chipset)
+static int validate_chipset(struct esp_adapter *adapter, u8 chipset)
 {
 	int ret = 0;
 

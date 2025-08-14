@@ -302,7 +302,8 @@ static int process_event_esp_bootup(struct esp_adapter *adapter, u8 *evt_buf, u8
 			adapter->capabilities = *(pos + 2);
 			break;
 		case ESP_BOOTUP_FIRMWARE_CHIP_ID:
-			ret = esp_validate_chipset(adapter, *(pos + 2));
+			if (adapter->if_ops && adapter->if_ops->validate_chipset)
+				ret = adapter->if_ops->validate_chipset(adapter, *(pos + 2));
 			break;
 		case ESP_BOOTUP_FW_DATA:
 			fw_p = (struct fw_data *)(pos + 2);

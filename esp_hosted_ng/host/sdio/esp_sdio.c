@@ -41,6 +41,7 @@ static int init_context(struct esp_sdio_context *context, struct esp_adapter *ad
 static struct sk_buff *read_packet(struct esp_adapter *adapter);
 static int write_packet(struct esp_adapter *adapter, struct sk_buff *skb);
 /*int deinit_context(struct esp_adapter *adapter);*/
+static int validate_chipset(struct esp_adapter *adapter, u8 chipset);
 
 static const struct sdio_device_id esp_devices[] = {
 	{ SDIO_DEVICE(ESP_VENDOR_ID_1, ESP_DEVICE_ID_ESP32_1) },
@@ -287,6 +288,7 @@ static void esp_remove(struct sdio_func *func)
 static struct esp_if_ops if_ops = {
 	.read		= read_packet,
 	.write		= write_packet,
+	.validate_chipset = validate_chipset,
 };
 
 static int get_firmware_data(struct esp_sdio_context *context)
@@ -877,7 +879,7 @@ int esp_init_interface_layer()
 	return sdio_register_driver(&esp_sdio_driver);
 }
 
-int esp_validate_chipset(struct esp_adapter *adapter, u8 chipset)
+static int validate_chipset(struct esp_adapter *adapter, u8 chipset)
 {
 	int ret = -1;
 
