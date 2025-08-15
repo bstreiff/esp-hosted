@@ -169,15 +169,6 @@ static int esp_slave_get_tx_buffer_num(struct esp_sdio_context *context, u32 *tx
 	return ret;
 }
 
-int esp_deinit_module(struct esp_adapter *adapter)
-{
-	/* Second & onward bootup cleanup is not required for SDIO:
-	 * As Removal of SDIO triggers complete Deinit and SDIO insertion/
-	 * detection, triggers probing which does initialization.
-	 */
-	return 0;
-}
-
 static int esp_get_len_from_slave(struct esp_sdio_context *context, u32 *rx_size, u8 is_lock_needed)
 {
 	u32 *len;

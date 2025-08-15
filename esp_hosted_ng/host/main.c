@@ -288,7 +288,8 @@ static int process_event_esp_bootup(struct esp_adapter *adapter, u8 *evt_buf, u8
 	clear_bit(ESP_INIT_DONE, &adapter->state_flags);
 	/* Deinit module if already initialized */
 	test_raw_tp_cleanup(adapter);
-	esp_deinit_module(adapter);
+	if (adapter->if_ops && adapter->if_ops->tx_reset)
+		adapter->if_ops->tx_reset(adapter);
 
 	pos = evt_buf;
 
