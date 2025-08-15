@@ -23,7 +23,6 @@
 #include "esp_cfg80211.h"
 #include "esp_stats.h"
 
-#define HOST_GPIO_PIN_INVALID -1
 #define CONFIG_ALLOW_MULTICAST_WAKEUP 1
 
 #define STRINGIFY_HELPER(x) #x
