@@ -565,11 +565,6 @@ static int adjust_spi_clock(struct esp_adapter *adapter, u8 spi_clk_mhz)
 	return 0;
 }
 
-int generate_slave_intr(void *context, u8 data)
-{
-	return 0;
-}
-
 static int esp_spi_probe(struct spi_device *spi)
 {
 	struct esp_spi_context *context;

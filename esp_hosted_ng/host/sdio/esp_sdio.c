@@ -101,12 +101,11 @@ static void esp_handle_isr(struct sdio_func *func)
 	kfree(int_status);
 }
 
-int generate_slave_intr(void *context, u8 data)
+static int generate_slave_intr(struct esp_sdio_context *context, u8 data)
 {
 	u8 *val;
 	int ret = 0;
 
-	context = (struct esp_sdio_context*) context;
 	if (!context)
 		return -EINVAL;
 
@@ -274,10 +273,17 @@ static void esp_remove(struct sdio_func *func)
 	esp_dbg("ESP SDIO cleanup completed\n");
 }
 
+static int disable_data_path(struct esp_adapter *adapter) {
+	struct esp_sdio_context *context = adapter->if_context;
+
+	return generate_slave_intr(context, BIT(ESP_CLOSE_DATA_PATH));
+}
+
 static struct esp_if_ops if_ops = {
 	.read		= read_packet,
 	.write		= write_packet,
 	.validate_chipset = validate_chipset,
+	.disable_data_path = disable_data_path,
 };
 
 static int get_firmware_data(struct esp_sdio_context *context)

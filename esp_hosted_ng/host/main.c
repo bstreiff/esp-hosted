@@ -331,11 +331,9 @@ static int process_event_esp_bootup(struct esp_adapter *adapter, u8 *evt_buf, u8
 			atomic_set(&adapter->state, ESP_CONTEXT_READY);
 	}
 	if (esp_add_card(adapter)) {
-		if (adapter->capabilities & ESP_WLAN_SDIO_SUPPORT ||
-		    adapter->capabilities & ESP_BT_SDIO_SUPPORT) {
-			atomic_set(&adapter->state, ESP_CONTEXT_DISABLED);
-			generate_slave_intr(&adapter->if_context, BIT(ESP_CLOSE_DATA_PATH));
-		}
+		atomic_set(&adapter->state, ESP_CONTEXT_DISABLED);
+		if (adapter->if_ops && adapter->if_ops->disable_data_path)
+			adapter->if_ops->disable_data_path(adapter);
 		esp_err("network interface init failed\n");
 		return -1;
 	}

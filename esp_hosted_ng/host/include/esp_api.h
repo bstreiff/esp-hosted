@@ -42,6 +42,5 @@ void process_test_capabilities(struct esp_adapter *adapter, u32 raw_tp_mode);
 int esp_init_raw_tp(struct esp_adapter *adapter);
 bool esp_is_valid_hardware_id(int hardware_id);
 char *esp_get_hardware_name(int hardware_id);
-int generate_slave_intr(void *context, u8 data);
 int esp_start_ota(struct esp_adapter *adapter, char *ota_file);
 #endif
