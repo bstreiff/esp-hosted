@@ -41,8 +41,6 @@ static struct esp_if_ops if_ops = {
 	.tx_reset = tx_reset,
 };
 
-static DEFINE_MUTEX(spi_lock);
-
 static void open_data_path(struct esp_spi_context *context)
 {
 	atomic_set(&context->tx_pending, 0);
@@ -286,7 +284,7 @@ static void esp_spi_work(struct work_struct *work)
 	int ret = 0;
 	volatile int trans_ready, rx_pending;
 
-	mutex_lock(&spi_lock);
+	mutex_lock(&context->spi_lock);
 
 	trans_ready = gpiod_get_value(context->handshake_gpio);
 	rx_pending = gpiod_get_value(context->dataready_gpio);
@@ -372,7 +370,7 @@ static void esp_spi_work(struct work_struct *work)
 		}
 	}
 
-	mutex_unlock(&spi_lock);
+	mutex_unlock(&context->spi_lock);
 }
 
 static int spi_dev_init(struct spi_device *spi, struct esp_spi_context *context)
@@ -451,6 +449,8 @@ static int spi_init(struct spi_device *spi, struct esp_spi_context *context)
 	int status = 0;
 	uint8_t prio_q_idx = 0;
 	struct esp_adapter *adapter;
+
+	mutex_init(&context->spi_lock);
 
 	context->spi_workqueue = create_workqueue("ESP_SPI_WORK_QUEUE");
 
