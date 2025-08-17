@@ -32,11 +32,6 @@ extern u32 raw_tp_mode;
 	esp_err("CMD53 read/write error at %d\n", __LINE__);	\
 } while (0);
 
-struct esp_sdio_context sdio_context;
-static atomic_t tx_pending;
-static atomic_t queue_items[MAX_PRIORITY_QUEUES];
-struct task_struct *tx_thread;
-
 static int init_context(struct esp_sdio_context *context, struct esp_adapter *adapter);
 static struct sk_buff *read_packet(struct esp_adapter *adapter);
 static int write_packet(struct esp_adapter *adapter, struct sk_buff *skb);
@@ -133,6 +128,9 @@ int generate_slave_intr(void *context, u8 data)
 
 static void deinit_sdio_func(struct sdio_func *func)
 {
+	struct esp_sdio_context* context = sdio_get_drvdata(func);
+	kfree(context);
+
 	sdio_set_drvdata(func, NULL);
 	sdio_claim_host(func);
 	/* Release IRQ */
@@ -246,11 +244,11 @@ static void esp_remove(struct sdio_func *func)
 
 	if (context) {
 		for (prio_q_idx = 0; prio_q_idx < MAX_PRIORITY_QUEUES; prio_q_idx++)
-			skb_queue_purge(&(sdio_context.tx_q[prio_q_idx]));
+			skb_queue_purge(&(context->tx_q[prio_q_idx]));
 	}
 
-	if (tx_thread)
-		kthread_stop(tx_thread);
+	if (context->tx_thread)
+		kthread_stop(context->tx_thread);
 
 	if (context) {
 		generate_slave_intr(context, BIT(ESP_CLOSE_DATA_PATH));
@@ -345,8 +343,8 @@ static int init_context(struct esp_sdio_context *context, struct esp_adapter *ad
 		return ret;
 
 	for (prio_q_idx = 0; prio_q_idx < MAX_PRIORITY_QUEUES; prio_q_idx++) {
-		skb_queue_head_init(&(sdio_context.tx_q[prio_q_idx]));
-		atomic_set(&queue_items[prio_q_idx], 0);
+		skb_queue_head_init(&(context->tx_q[prio_q_idx]));
+		atomic_set(&context->queue_items[prio_q_idx], 0);
 	}
 
 	context->adapter->if_type = ESP_IF_TYPE_SDIO;
@@ -452,6 +450,7 @@ static int write_packet(struct esp_adapter *adapter, struct sk_buff *skb)
 {
 	u32 max_pkt_size = ESP_RX_BUFFER_SIZE - sizeof(struct esp_payload_header);
 	struct esp_payload_header *payload_header = (struct esp_payload_header *) skb->data;
+	struct esp_sdio_context *context;
 	struct esp_skb_cb *cb = NULL;
 	uint8_t prio = PRIO_Q_LOW;
 
@@ -465,6 +464,8 @@ static int write_packet(struct esp_adapter *adapter, struct sk_buff *skb)
 		return -EINVAL;
 	}
 
+	context = adapter->if_context;
+
 	if (skb->len > max_pkt_size) {
 		esp_err("Drop pkt of len[%u] > max SDIO transport len[%u]\n",
 				skb->len, max_pkt_size);
@@ -474,7 +475,7 @@ static int write_packet(struct esp_adapter *adapter, struct sk_buff *skb)
 	}
 
 	cb = (struct esp_skb_cb *)skb->cb;
-	if (cb && cb->priv && (atomic_read(&tx_pending) >= TX_MAX_PENDING_COUNT)) {
+	if (cb && cb->priv && (atomic_read(&context->tx_pending) >= TX_MAX_PENDING_COUNT)) {
 		esp_tx_pause(cb->priv);
 		dev_kfree_skb(skb);
 		skb = NULL;
@@ -483,7 +484,7 @@ static int write_packet(struct esp_adapter *adapter, struct sk_buff *skb)
 	}
 
 	/* Enqueue SKB in tx_q */
-	atomic_inc(&tx_pending);
+	atomic_inc(&context->tx_pending);
 
 	/* Notify to process queue */
 	if (payload_header->if_type == ESP_INTERNAL_IF)
@@ -493,20 +494,19 @@ static int write_packet(struct esp_adapter *adapter, struct sk_buff *skb)
 	else
 		prio = PRIO_Q_LOW;
 
-	atomic_inc(&queue_items[prio]);
-	skb_queue_tail(&(sdio_context.tx_q[prio]), skb);
+	atomic_inc(&context->queue_items[prio]);
+	skb_queue_tail(&(context->tx_q[prio]), skb);
 
 	return 0;
 }
 
-static int is_sdio_write_buffer_available(u32 buf_needed)
+static int is_sdio_write_buffer_available(struct esp_sdio_context *context, u32 buf_needed)
 {
 #define BUFFER_AVAILABLE        1
 #define BUFFER_UNAVAILABLE      0
 
 	int ret = 0;
 	static u32 buf_available;
-	struct esp_sdio_context *context = &sdio_context;
 	u8 retry = MAX_WRITE_RETRIES;
 
 	/*If buffer needed are less than buffer available
@@ -567,41 +567,41 @@ static int tx_process(void *data)
 			continue;
 		}
 
-		if (atomic_read(&queue_items[PRIO_Q_HIGH]) > 0) {
+		if (atomic_read(&context->queue_items[PRIO_Q_HIGH]) > 0) {
 			tx_skb = skb_dequeue(&(context->tx_q[PRIO_Q_HIGH]));
 			if (!tx_skb) {
 				continue;
 			}
-			atomic_dec(&queue_items[PRIO_Q_HIGH]);
-		} else if (atomic_read(&queue_items[PRIO_Q_MID]) > 0) {
+			atomic_dec(&context->queue_items[PRIO_Q_HIGH]);
+		} else if (atomic_read(&context->queue_items[PRIO_Q_MID]) > 0) {
 			tx_skb = skb_dequeue(&(context->tx_q[PRIO_Q_MID]));
 			if (!tx_skb) {
 				continue;
 			}
-			atomic_dec(&queue_items[PRIO_Q_MID]);
-		} else if (atomic_read(&queue_items[PRIO_Q_LOW]) > 0) {
+			atomic_dec(&context->queue_items[PRIO_Q_MID]);
+		} else if (atomic_read(&context->queue_items[PRIO_Q_LOW]) > 0) {
 			tx_skb = skb_dequeue(&(context->tx_q[PRIO_Q_LOW]));
 			if (!tx_skb) {
 				continue;
 			}
-			atomic_dec(&queue_items[PRIO_Q_LOW]);
+			atomic_dec(&context->queue_items[PRIO_Q_LOW]);
 		} else {
 			/* esp_verbose("not ready high=%d mid=%d low=%d\n",
-					atomic_read(&queue_items[PRIO_Q_HIGH]),
-					atomic_read(&queue_items[PRIO_Q_MID]),
-					atomic_read(&queue_items[PRIO_Q_LOW])); */
+					atomic_read(&context->queue_items[PRIO_Q_HIGH]),
+					atomic_read(&context->queue_items[PRIO_Q_MID]),
+					atomic_read(&context->queue_items[PRIO_Q_LOW])); */
 			msleep(1);
 			continue;
 		}
 
-		if (atomic_read(&tx_pending))
-			atomic_dec(&tx_pending);
+		if (atomic_read(&context->tx_pending))
+			atomic_dec(&context->tx_pending);
 
 		retry = MAX_WRITE_RETRIES;
 
 		/* resume network tx queue if bearable load */
 		cb = (struct esp_skb_cb *)tx_skb->cb;
-		if (cb && cb->priv && atomic_read(&tx_pending) < TX_RESUME_THRESHOLD) {
+		if (cb && cb->priv && atomic_read(&context->tx_pending) < TX_RESUME_THRESHOLD) {
 			esp_tx_resume(cb->priv);
 #if TEST_RAW_TP
 			if (raw_tp_mode != 0) {
@@ -614,7 +614,7 @@ static int tx_process(void *data)
 
 		/*If SDIO slave buffer is available to write then only write data
 		else wait till buffer is available*/
-		ret = is_sdio_write_buffer_available(buf_needed);
+		ret = is_sdio_write_buffer_available(context, buf_needed);
 		if (!ret) {
 			dev_kfree_skb(tx_skb);
 			continue;
@@ -668,7 +668,7 @@ static struct esp_sdio_context *init_sdio_func(struct sdio_func *func, int *sdio
 	if (!func)
 		return NULL;
 
-	context = &sdio_context;
+	context = kzalloc(sizeof(*context), GFP_KERNEL);
 
 	context->func = func;
 
@@ -720,7 +720,7 @@ static int esp_probe(struct sdio_func *func,
 	esp_info("ESP network device detected\n");
 
 	context = init_sdio_func(func, &ret);;
-	atomic_set(&tx_pending, 0);
+	atomic_set(&context->tx_pending, 0);
 
 	if (!context) {
 		if (ret)
@@ -729,9 +729,9 @@ static int esp_probe(struct sdio_func *func,
 			return -EINVAL;
 	}
 
-	if (sdio_context.sdio_clk_mhz) {
+	if (context->sdio_clk_mhz) {
 		struct mmc_host *host = func->card->host;
-		u32 hz = sdio_context.sdio_clk_mhz * NUMBER_1M;
+		u32 hz = context->sdio_clk_mhz * NUMBER_1M;
 		/* Expansion of mmc_set_clock that isnt exported */
 		if (hz < host->f_min)
 			hz = host->f_min;
@@ -754,9 +754,9 @@ static int esp_probe(struct sdio_func *func,
 		return ret;
 	}
 
-	tx_thread = kthread_run(tx_process, context->adapter, "esp_TX");
+	context->tx_thread = kthread_run(tx_process, context->adapter, "esp_TX");
 
-	if (!tx_thread)
+	if (!context->tx_thread)
 		esp_err("Failed to create esp_sdio TX thread\n");
 
 	atomic_set(&context->adapter->state, ESP_CONTEXT_RX_READY);

@@ -81,6 +81,9 @@ struct esp_sdio_context {
 	struct esp_adapter     *adapter;
 	struct sdio_func       *func;
 	struct sk_buff_head    tx_q[MAX_PRIORITY_QUEUES];
+	atomic_t               tx_pending;
+	atomic_t               queue_items[MAX_PRIORITY_QUEUES];
+	struct task_struct     *tx_thread;
 	u32                    rx_byte_count;
 	u32                    tx_buffer_count;
 	u32			sdio_clk_mhz;
