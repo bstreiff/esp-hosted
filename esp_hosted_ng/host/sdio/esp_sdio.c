@@ -712,6 +712,34 @@ static struct esp_sdio_context *init_sdio_func(struct sdio_func *func, int *sdio
 	return context;
 }
 
+static int validate_chipset(struct esp_adapter *adapter, u8 chipset)
+{
+	int ret = -1;
+
+	switch(chipset) {
+	case ESP_FIRMWARE_CHIP_ESP32:
+	case ESP_FIRMWARE_CHIP_ESP32C6:
+	case ESP_FIRMWARE_CHIP_ESP32C5:
+		adapter->chipset = chipset;
+		esp_info("Chipset=%s ID=%02x detected over SDIO\n", esp_chipname_from_id(chipset), chipset);
+		ret = 0;
+		break;
+	case ESP_FIRMWARE_CHIP_ESP32S2:
+	case ESP_FIRMWARE_CHIP_ESP32S3:
+	case ESP_FIRMWARE_CHIP_ESP32C2:
+	case ESP_FIRMWARE_CHIP_ESP32C3:
+		esp_err("Chipset=%s ID=%02x not supported for SDIO\n", esp_chipname_from_id(chipset), chipset);
+		adapter->chipset = ESP_FIRMWARE_CHIP_UNRECOGNIZED;
+		break;
+	default:
+		esp_err("Unrecognized Chipset ID=%02x\n", chipset);
+		adapter->chipset = ESP_FIRMWARE_CHIP_UNRECOGNIZED;
+		break;
+	}
+
+	return ret;
+}
+
 static int esp_probe(struct sdio_func *func,
 				  const struct sdio_device_id *id)
 {
@@ -874,34 +902,6 @@ int esp_init_interface_layer()
 {
 
 	return sdio_register_driver(&esp_sdio_driver);
-}
-
-static int validate_chipset(struct esp_adapter *adapter, u8 chipset)
-{
-	int ret = -1;
-
-	switch(chipset) {
-	case ESP_FIRMWARE_CHIP_ESP32:
-	case ESP_FIRMWARE_CHIP_ESP32C6:
-	case ESP_FIRMWARE_CHIP_ESP32C5:
-		adapter->chipset = chipset;
-		esp_info("Chipset=%s ID=%02x detected over SDIO\n", esp_chipname_from_id(chipset), chipset);
-		ret = 0;
-		break;
-	case ESP_FIRMWARE_CHIP_ESP32S2:
-	case ESP_FIRMWARE_CHIP_ESP32S3:
-	case ESP_FIRMWARE_CHIP_ESP32C2:
-	case ESP_FIRMWARE_CHIP_ESP32C3:
-		esp_err("Chipset=%s ID=%02x not supported for SDIO\n", esp_chipname_from_id(chipset), chipset);
-		adapter->chipset = ESP_FIRMWARE_CHIP_UNRECOGNIZED;
-		break;
-	default:
-		esp_err("Unrecognized Chipset ID=%02x\n", chipset);
-		adapter->chipset = ESP_FIRMWARE_CHIP_UNRECOGNIZED;
-		break;
-	}
-
-	return ret;
 }
 
 void esp_deinit_interface_layer()
