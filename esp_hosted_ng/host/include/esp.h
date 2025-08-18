@@ -104,6 +104,22 @@ struct esp32_debugfs {
 #endif
 };
 
+#define TEST_RAW_TP 1
+
+#ifdef TEST_RAW_TP
+struct esp_raw_tp {
+	struct task_struct      *tx_thread;
+	int                     test_raw_tp;
+	int                     host_to_esp;
+	struct timer_list       log_stats_timer;
+	unsigned long           test_len;
+	uint32_t                test_count;
+	struct completion       traffic_open;
+	uint8_t                 log_stats_timer_running;
+	uint8_t                 traffic_open_init_done;
+};
+#endif
+
 struct esp_adapter {
 	struct device           *dev;
 	struct wiphy            *wiphy;
@@ -155,6 +171,11 @@ struct esp_adapter {
 	int                     chipset;
 
 	struct gpio_desc	*reset_gpio;
+
+#if TEST_RAW_TP
+	struct esp_raw_tp       raw_tp;
+#endif
+
 };
 
 struct esp_device {

@@ -16,28 +16,19 @@
 #include <linux/timer.h>
 #include <linux/kthread.h>
 
-static struct task_struct *raw_tp_tx_thread;
-static int test_raw_tp;
-static int test_raw_tp__host_to_esp;
-static struct timer_list log_raw_tp_stats_timer;
-static u8 log_raw_tp_stats_timer_running;
-static unsigned long test_raw_tp_len;
-static u32 raw_tp_timer_count;
-static u8 traffic_open_init_done;
-static struct completion traffic_open;
-
 static void log_raw_tp_stats_timer_cb(struct timer_list *timer)
 {
+	struct esp_raw_tp *raw_tp = from_timer(raw_tp, timer, log_stats_timer);
 	unsigned long actual_bandwidth = 0;
 
-	mod_timer(&log_raw_tp_stats_timer, jiffies + msecs_to_jiffies(1000));
-	actual_bandwidth = (test_raw_tp_len*8)/1024;
+	mod_timer(&raw_tp->log_stats_timer, jiffies + msecs_to_jiffies(1000));
+	actual_bandwidth = (raw_tp->test_len*8)/1024;
 	esp_info("%u-%u sec       %lu kbits/sec\n\r",
-			raw_tp_timer_count,
-			raw_tp_timer_count + 1, actual_bandwidth);
+			raw_tp->test_count,
+			raw_tp->test_count + 1, actual_bandwidth);
 
-	raw_tp_timer_count++;
-	test_raw_tp_len = 0;
+	raw_tp->test_count++;
+	raw_tp->test_len = 0;
 }
 
 static int raw_tp_tx_process(void *data)
@@ -46,6 +37,7 @@ static int raw_tp_tx_process(void *data)
 	struct sk_buff *tx_skb = NULL;
 	struct esp_payload_header *payload_header = NULL;
 	struct esp_adapter *adapter = (struct esp_adapter *)data;
+	struct esp_raw_tp *raw_tp = &adapter->raw_tp;
 	struct esp_wifi_device *priv = NULL;
 	struct esp_skb_cb *cb = NULL;
 	u8 pad_len = 0;
@@ -88,11 +80,11 @@ static int raw_tp_tx_process(void *data)
 			}
 			ret = esp_send_packet(adapter, tx_skb);
 			if (!ret)
-				test_raw_tp_len += TEST_RAW_TP__BUF_SIZE;
+				raw_tp->test_len += TEST_RAW_TP__BUF_SIZE;
 
 		} else {
-			if (traffic_open_init_done)
-				wait_for_completion_interruptible(&traffic_open);
+			if (raw_tp->traffic_open_init_done)
+				wait_for_completion_interruptible(&raw_tp->traffic_open);
 		}
 	}
 	esp_info("raw tp tx thrd stopped\n");
@@ -101,24 +93,26 @@ static int raw_tp_tx_process(void *data)
 
 static void process_raw_tp_flags(struct esp_adapter *adapter)
 {
+	struct esp_raw_tp *raw_tp = &adapter->raw_tp;
+
 	test_raw_tp_cleanup(adapter);
 
-	if (test_raw_tp) {
+	if (raw_tp->test_raw_tp) {
 
-		timer_setup(&log_raw_tp_stats_timer, log_raw_tp_stats_timer_cb, 0);
-		mod_timer(&log_raw_tp_stats_timer, jiffies + msecs_to_jiffies(1000));
-		log_raw_tp_stats_timer_running = 1;
+		timer_setup(&raw_tp->log_stats_timer, log_raw_tp_stats_timer_cb, 0);
+		mod_timer(&raw_tp->log_stats_timer, jiffies + msecs_to_jiffies(1000));
+		raw_tp->log_stats_timer_running = 1;
 
-		if (test_raw_tp__host_to_esp) {
+		if (raw_tp->host_to_esp) {
 
-			raw_tp_tx_thread = kthread_run(raw_tp_tx_process, adapter, "raw tp thrd");
-			if (!raw_tp_tx_thread)
+			raw_tp->tx_thread = kthread_run(raw_tp_tx_process, adapter, "raw tp thrd");
+			if (!raw_tp->tx_thread)
 				esp_err("Failed to create send traffic thread\n");
 
 		}
-		if (!traffic_open_init_done) {
-			init_completion(&traffic_open);
-			traffic_open_init_done = 1;
+		if (!raw_tp->traffic_open_init_done) {
+			init_completion(&raw_tp->traffic_open);
+			raw_tp->traffic_open_init_done = 1;
 		}
 	}
 }
@@ -126,57 +120,66 @@ static void process_raw_tp_flags(struct esp_adapter *adapter)
 
 static void start_test_raw_tp(struct esp_adapter *adapter, int raw_tp__host_to_esp)
 {
-	test_raw_tp = 1;
-	test_raw_tp__host_to_esp = raw_tp__host_to_esp;
+	struct esp_raw_tp *raw_tp = &adapter->raw_tp;
+
+	raw_tp->test_raw_tp = 1;
+	raw_tp->host_to_esp = raw_tp__host_to_esp;
 }
 
 static void stop_test_raw_tp(struct esp_adapter *adapter)
 {
-	test_raw_tp = 0;
-	test_raw_tp__host_to_esp = 0;
+	struct esp_raw_tp *raw_tp = &adapter->raw_tp;
+
+	raw_tp->test_raw_tp = 0;
+	raw_tp->host_to_esp = 0;
 }
 
 void esp_raw_tp_queue_resume(struct esp_adapter *adapter)
 {
-	if (traffic_open_init_done)
-		if (!completion_done(&traffic_open))
-			complete_all(&traffic_open);
+	struct esp_raw_tp *raw_tp = &adapter->raw_tp;
+
+	if (raw_tp->traffic_open_init_done)
+		if (!completion_done(&raw_tp->traffic_open))
+			complete_all(&raw_tp->traffic_open);
 }
 
 void test_raw_tp_cleanup(struct esp_adapter *adapter)
 {
+	struct esp_raw_tp *raw_tp = &adapter->raw_tp;
 	int ret = 0;
 
-	if (log_raw_tp_stats_timer_running) {
-		ret = del_timer(&log_raw_tp_stats_timer);
+	if (raw_tp->log_stats_timer_running) {
+		ret = del_timer(&raw_tp->log_stats_timer);
 		if (!ret) {
-			log_raw_tp_stats_timer_running = 0;
+			raw_tp->log_stats_timer_running = 0;
 		}
-		raw_tp_timer_count = 0;
+		raw_tp->test_count = 0;
 	}
 
-	if (traffic_open_init_done)
-		if (!completion_done(&traffic_open))
-			complete_all(&traffic_open);
+	if (raw_tp->traffic_open_init_done)
+		if (!completion_done(&raw_tp->traffic_open))
+			complete_all(&raw_tp->traffic_open);
 
-	if (raw_tp_tx_thread) {
-		ret = kthread_stop(raw_tp_tx_thread);
+	if (raw_tp->tx_thread) {
+		ret = kthread_stop(raw_tp->tx_thread);
 		if (ret) {
 			msleep(10);
-			ret = kthread_stop(raw_tp_tx_thread);
+			ret = kthread_stop(raw_tp->tx_thread);
 		}
 		if (ret)
 			esp_err("Kthread stop error\n");
 
-		raw_tp_tx_thread = 0;
+		raw_tp->tx_thread = NULL;
 	}
 }
 
 void update_test_raw_tp_rx_stats(struct esp_adapter *adapter, u16 len)
 {
+	struct esp_raw_tp *raw_tp = &adapter->raw_tp;
+
 	/* if traffic dir is esp to host, increment stats */
-	if (!test_raw_tp__host_to_esp)
-		test_raw_tp_len += len;
+	if (!raw_tp->host_to_esp)
+		raw_tp->test_len += len;
 }
 #endif
 

@@ -10,8 +10,6 @@
 
 #include "esp.h"
 
-#define TEST_RAW_TP 1
-
 #if TEST_RAW_TP
 
 #define TEST_RAW_TP__BUF_SIZE    1460
