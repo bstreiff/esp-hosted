@@ -897,14 +897,4 @@ static struct sdio_driver esp_sdio_driver = {
 		.of_match_table = esp_sdio_of_match,
 	},
 };
-
-int esp_init_interface_layer()
-{
-
-	return sdio_register_driver(&esp_sdio_driver);
-}
-
-void esp_deinit_interface_layer()
-{
-	sdio_unregister_driver(&esp_sdio_driver);
-}
+module_sdio_driver(esp_sdio_driver);

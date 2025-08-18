@@ -22,7 +22,4 @@ struct esp_if_ops {
 	int (*disable_data_path)(struct esp_adapter *adapter);
 };
 
-int esp_init_interface_layer(void);
-void esp_deinit_interface_layer(void);
-
 #endif

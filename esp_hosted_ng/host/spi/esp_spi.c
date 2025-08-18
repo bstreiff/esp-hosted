@@ -632,13 +632,4 @@ static struct spi_driver esp_spi_driver = {
 	.remove = esp_spi_remove,
 	.id_table = esp_spi_ids,
 };
-
-int esp_init_interface_layer()
-{
-	return spi_register_driver(&esp_spi_driver);
-}
-
-void esp_deinit_interface_layer()
-{
-	return spi_unregister_driver(&esp_spi_driver);
-}
+module_spi_driver(esp_spi_driver);

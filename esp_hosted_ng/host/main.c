@@ -1125,15 +1125,6 @@ void esp_adapter_destroy(struct esp_adapter *adapter) {
 	deinit_adapter(adapter);
 }
 
-static int __init esp_init(void)
-{
-	return esp_init_interface_layer();
-}
-
-static void __exit esp_exit(void)
-{
-	esp_deinit_interface_layer();
-}
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Amey Inamdar <amey.inamdar@espressif.com>");
 MODULE_AUTHOR("Mangesh Malusare <mangesh.malusare@espressif.com>");
@@ -1141,5 +1132,3 @@ MODULE_AUTHOR("Yogesh Mantri <yogesh.mantri@espressif.com>");
 MODULE_AUTHOR("Kapil Gupta <kapil.gupta@espressif.com>");
 MODULE_DESCRIPTION("Wifi driver for ESP-Hosted solution");
 MODULE_VERSION(RELEASE_VERSION);
-module_init(esp_init);
-module_exit(esp_exit);
