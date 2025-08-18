@@ -182,6 +182,7 @@ int esp_deinit_bt(struct esp_adapter *adapter)
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(esp_deinit_bt);
 
 int esp_init_bt(struct esp_adapter *adapter)
 {
@@ -258,3 +259,4 @@ int esp_init_bt(struct esp_adapter *adapter)
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(esp_init_bt);

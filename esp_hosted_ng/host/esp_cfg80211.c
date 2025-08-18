@@ -1307,3 +1307,4 @@ int esp_mark_scan_done_and_disconnect(struct esp_wifi_device *priv, uint8_t loca
 	ESP_MARK_SCAN_DONE(priv, true);
 	return esp_mark_disconnect(priv, 0, locally_disconnect);
 }
+EXPORT_SYMBOL_GPL(esp_mark_scan_done_and_disconnect);

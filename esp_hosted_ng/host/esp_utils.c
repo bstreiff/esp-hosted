@@ -50,3 +50,4 @@ char * esp_chipname_from_id(int chipset_id)
 
 	return "Unknown Chip";
 }
+EXPORT_SYMBOL_GPL(esp_chipname_from_id);

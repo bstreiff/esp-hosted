@@ -18,6 +18,7 @@
 #include "esp_stats.h"
 #include "esp_utils.h"
 #include "esp_cfg80211.h"
+#include "esp_fw_version.h"
 
 #define SPI_INITIAL_CLK_MHZ     10
 #define TX_MAX_PENDING_COUNT    100
@@ -305,9 +306,7 @@ static void esp_spi_work(struct work_struct *work)
 				if (cb && cb->priv && atomic_read(&context->tx_pending) < TX_RESUME_THRESHOLD) {
 					esp_tx_resume(cb->priv);
 #if TEST_RAW_TP
-					if (raw_tp_mode != 0) {
-						esp_raw_tp_queue_resume(context->adapter);
-					}
+					esp_raw_tp_queue_resume(context->adapter);
 #endif
 				}
 			}
@@ -633,3 +632,11 @@ static struct spi_driver esp_spi_driver = {
 	.id_table = esp_spi_ids,
 };
 module_spi_driver(esp_spi_driver);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Amey Inamdar <amey.inamdar@espressif.com>");
+MODULE_AUTHOR("Mangesh Malusare <mangesh.malusare@espressif.com>");
+MODULE_AUTHOR("Yogesh Mantri <yogesh.mantri@espressif.com>");
+MODULE_AUTHOR("Kapil Gupta <kapil.gupta@espressif.com>");
+MODULE_DESCRIPTION("Wifi driver for ESP-Hosted solution");
+MODULE_VERSION(RELEASE_VERSION);

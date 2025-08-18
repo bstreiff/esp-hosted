@@ -54,14 +54,17 @@ void esp_logger(int level, const char *function, const char* fmt, ...)
 
 	va_end(args);
 }
+EXPORT_SYMBOL_GPL(esp_logger);
 
 void esp_hex_dump(const char *prefix_str, const void *buf, size_t len)
 {
 	print_hex_dump(KERN_INFO, prefix_str, DUMP_PREFIX_ADDRESS, 16, 1, buf, len, 1);
 }
+EXPORT_SYMBOL_GPL(esp_hex_dump);
 
 void esp_hex_dump_verbose(const char *prefix_str, const void *buf, size_t len)
 {
 	if (log_level >= ESP_VERBOSE)
 		print_hex_dump(KERN_INFO, prefix_str, DUMP_PREFIX_ADDRESS, 16, 1, buf, len, 1);
 }
+EXPORT_SYMBOL_GPL(esp_hex_dump_verbose);

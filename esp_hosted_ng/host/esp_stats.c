@@ -16,6 +16,8 @@
 #include <linux/timer.h>
 #include <linux/kthread.h>
 
+extern u32 raw_tp_mode;
+
 static void log_raw_tp_stats_timer_cb(struct timer_list *timer)
 {
 	struct esp_raw_tp *raw_tp = from_timer(raw_tp, timer, log_stats_timer);
@@ -138,10 +140,12 @@ void esp_raw_tp_queue_resume(struct esp_adapter *adapter)
 {
 	struct esp_raw_tp *raw_tp = &adapter->raw_tp;
 
-	if (raw_tp->traffic_open_init_done)
-		if (!completion_done(&raw_tp->traffic_open))
-			complete_all(&raw_tp->traffic_open);
+	if (raw_tp_mode != 0)
+		if (raw_tp->traffic_open_init_done)
+			if (!completion_done(&raw_tp->traffic_open))
+				complete_all(&raw_tp->traffic_open);
 }
+EXPORT_SYMBOL_GPL(esp_raw_tp_queue_resume);
 
 void test_raw_tp_cleanup(struct esp_adapter *adapter)
 {

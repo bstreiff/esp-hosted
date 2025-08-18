@@ -46,6 +46,7 @@ void esp_process_new_packet_intr(struct esp_adapter *adapter)
 	if (adapter)
 		queue_work(adapter->if_rx_workqueue, &adapter->if_rx_work);
 }
+EXPORT_SYMBOL_GPL(esp_process_new_packet_intr);
 
 static int process_tx_packet(struct sk_buff *skb)
 {
@@ -658,6 +659,7 @@ int esp_remove_card(struct esp_adapter *adapter)
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(esp_remove_card);
 
 struct esp_wifi_device *get_priv_from_payload_header(
 		struct esp_adapter *adapter,
@@ -860,6 +862,7 @@ char *esp_get_hardware_name(int hardware_id)
 	else
 		return "N/A";
 }
+EXPORT_SYMBOL_GPL(esp_get_hardware_name);
 
 bool esp_is_valid_hardware_id(int hardware_id)
 {
@@ -876,6 +879,7 @@ bool esp_is_valid_hardware_id(int hardware_id)
 		return false;
 	}
 }
+EXPORT_SYMBOL_GPL(esp_is_valid_hardware_id);
 
 int esp_is_tx_queue_paused(struct esp_wifi_device *priv)
 {
@@ -887,6 +891,7 @@ int esp_is_tx_queue_paused(struct esp_wifi_device *priv)
 		return 1;
     return 0;
 }
+EXPORT_SYMBOL_GPL(esp_is_tx_queue_paused);
 
 void esp_tx_pause(struct esp_wifi_device *priv)
 {
@@ -897,6 +902,7 @@ void esp_tx_pause(struct esp_wifi_device *priv)
 		netif_stop_queue(priv->ndev);
 	}
 }
+EXPORT_SYMBOL_GPL(esp_tx_pause);
 
 void esp_tx_resume(struct esp_wifi_device *priv)
 {
@@ -907,6 +913,7 @@ void esp_tx_resume(struct esp_wifi_device *priv)
 		netif_wake_queue(priv->ndev);
 	}
 }
+EXPORT_SYMBOL_GPL(esp_tx_resume);
 
 struct sk_buff *esp_alloc_skb(u32 len)
 {
@@ -926,7 +933,7 @@ struct sk_buff *esp_alloc_skb(u32 len)
 
 	return skb;
 }
-
+EXPORT_SYMBOL_GPL(esp_alloc_skb);
 
 static int esp_get_packets(struct esp_adapter *adapter)
 {
@@ -1107,6 +1114,7 @@ struct esp_adapter *esp_adapter_create(struct device *dev) {
 
 	return adapter;
 }
+EXPORT_SYMBOL_GPL(esp_adapter_create);
 
 void esp_adapter_destroy(struct esp_adapter *adapter) {
 	uint8_t iface_idx = 0;
@@ -1124,6 +1132,7 @@ void esp_adapter_destroy(struct esp_adapter *adapter) {
 
 	deinit_adapter(adapter);
 }
+EXPORT_SYMBOL_GPL(esp_adapter_destroy);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Amey Inamdar <amey.inamdar@espressif.com>");

@@ -21,8 +21,8 @@
 #include "esp_stats.h"
 #include "esp_utils.h"
 #include "esp_kernel_port.h"
+#include "esp_fw_version.h"
 
-extern u32 raw_tp_mode;
 #define MAX_WRITE_RETRIES       2
 #define TX_MAX_PENDING_COUNT    200
 #define TX_RESUME_THRESHOLD     (TX_MAX_PENDING_COUNT/5)
@@ -610,9 +610,7 @@ static int tx_process(void *data)
 		if (cb && cb->priv && atomic_read(&context->tx_pending) < TX_RESUME_THRESHOLD) {
 			esp_tx_resume(cb->priv);
 #if TEST_RAW_TP
-			if (raw_tp_mode != 0) {
-				esp_raw_tp_queue_resume(adapter);
-			}
+			esp_raw_tp_queue_resume(adapter);
 #endif
 		}
 
@@ -898,3 +896,11 @@ static struct sdio_driver esp_sdio_driver = {
 	},
 };
 module_sdio_driver(esp_sdio_driver);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Amey Inamdar <amey.inamdar@espressif.com>");
+MODULE_AUTHOR("Mangesh Malusare <mangesh.malusare@espressif.com>");
+MODULE_AUTHOR("Yogesh Mantri <yogesh.mantri@espressif.com>");
+MODULE_AUTHOR("Kapil Gupta <kapil.gupta@espressif.com>");
+MODULE_DESCRIPTION("Wifi driver for ESP-Hosted solution");
+MODULE_VERSION(RELEASE_VERSION);
