@@ -25,17 +25,9 @@
 
 #define CONFIG_ALLOW_MULTICAST_WAKEUP 1
 
-#define STRINGIFY_HELPER(x) #x
-#define STRINGIFY(x) STRINGIFY_HELPER(x)
-
-#define RELEASE_VERSION PROJECT_NAME "-" STRINGIFY(PROJECT_VERSION_MAJOR_1) "." STRINGIFY(PROJECT_VERSION_MAJOR_2) "." STRINGIFY(PROJECT_VERSION_MINOR) "." STRINGIFY(PROJECT_REVISION_PATCH_1) "." STRINGIFY(PROJECT_REVISION_PATCH_2)
-
 static char *ota_file = NULL;
 extern u8 ap_bssid[MAC_ADDR_LEN];
 u32 raw_tp_mode = 0;
-int log_level = ESP_INFO;
-#define VERSION_BUFFER_SIZE 50
-char version_str[VERSION_BUFFER_SIZE];
 
 
 module_param(raw_tp_mode, uint, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
@@ -221,8 +213,12 @@ static void init_bt(struct esp_adapter *adapter)
 	}
 }
 
-static int check_esp_version(struct fw_version *ver)
+static int check_esp_version(struct esp_adapter *adapter, struct fw_version *ver)
 {
+	char version_str[VERSION_BUFFER_SIZE];
+
+	memcpy(&adapter->version, ver, sizeof(*ver));
+
 	snprintf(version_str, VERSION_BUFFER_SIZE, "%s-%u.%u.%u.%u.%u",
 		ver->project_name, ver->major1, ver->major2, ver->minor, ver->revision_patch_1, ver->revision_patch_2);
 
@@ -258,7 +254,7 @@ static void print_reset_reason(uint32_t reason)
 	}
 }
 
-static int process_fw_data(struct fw_data *fw_p, int tag_len)
+static int process_fw_data(struct esp_adapter *adapter, struct fw_data *fw_p, int tag_len)
 {
 	if (tag_len != sizeof(struct fw_data)) {
 		esp_err("Length not matching to firmware data size\n");
@@ -268,7 +264,7 @@ static int process_fw_data(struct fw_data *fw_p, int tag_len)
 	esp_info("ESP chipset's last reset cause:\n");
 	print_reset_reason(le32_to_cpu(fw_p->last_reset_reason));
 
-	return check_esp_version(&fw_p->version);
+	return check_esp_version(adapter, &fw_p->version);
 }
 
 static int process_event_esp_bootup(struct esp_adapter *adapter, u8 *evt_buf, u8 len)
@@ -308,7 +304,7 @@ static int process_event_esp_bootup(struct esp_adapter *adapter, u8 *evt_buf, u8
 			break;
 		case ESP_BOOTUP_FW_DATA:
 			fw_p = (struct fw_data *)(pos + 2);
-			ret = process_fw_data(fw_p, tag_len);
+			ret = process_fw_data(adapter, fw_p, tag_len);
 			break;
 		case ESP_BOOTUP_SPI_CLK_MHZ:
 			if (adapter->if_ops && adapter->if_ops->adjust_spi_clock)
@@ -1087,6 +1083,7 @@ static void esp_reset(struct esp_adapter *adapter)
 
 struct esp_adapter *esp_adapter_create(struct device *dev) {
 	struct esp_adapter *adapter = NULL;
+	int ret;
 
 	adapter = kzalloc(sizeof(*adapter), GFP_KERNEL);
 	if (!adapter)
@@ -1096,6 +1093,13 @@ struct esp_adapter *esp_adapter_create(struct device *dev) {
 
 	if (!adapter)
 		return NULL;
+
+	ret = debugfs_init(adapter);
+	if (ret < 0) {
+		esp_err("unable to init debugfs, err: %d\n", ret);
+		kfree(adapter);
+		return NULL;
+	}
 
 	/* Reset ESP, Clean start ESP */
 	esp_reset(adapter);
@@ -1116,26 +1120,19 @@ void esp_adapter_destroy(struct esp_adapter *adapter) {
 	}
 	clear_bit(ESP_DRIVER_ACTIVE, &adapter->state_flags);
 
+	debugfs_exit(adapter);
+
 	deinit_adapter(adapter);
 }
 
 static int __init esp_init(void)
 {
-	int ret = esp_init_interface_layer();
-
-	if (ret != 0) {
-		return ret;
-	}
-
-	ret = debugfs_init();
-	return ret;
+	return esp_init_interface_layer();
 }
 
 static void __exit esp_exit(void)
 {
 	esp_deinit_interface_layer();
-
-	debugfs_exit();
 }
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Amey Inamdar <amey.inamdar@espressif.com>");

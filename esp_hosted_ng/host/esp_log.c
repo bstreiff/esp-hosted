@@ -4,7 +4,8 @@
 #include "utils.h"
 
 #define esp_fmt(fmt) "%s: %s: " fmt, KBUILD_MODNAME, function
-extern int log_level;
+int log_level = ESP_INFO;
+
 static char *get_kern_log_level(int level)
 {
 	char *kern_level;

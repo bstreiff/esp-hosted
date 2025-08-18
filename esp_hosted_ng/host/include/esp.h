@@ -84,6 +84,26 @@ struct command_node {
 	bool in_cmd_queue;
 };
 
+#define DEBUGFS_TODO 0
+
+struct esp32_debugfs {
+	struct dentry *debugfs_dir;
+	struct dentry *log_level_file; /* log level for host dmesg */
+	struct dentry *version;
+#if DEBUGFS_TODO
+	int debugfs_log_level;
+	char *log_buffer;
+	size_t log_length;
+	size_t write_pos;
+
+	struct dentry *host_log_level_file; /* log level for host logs in debugfs logger */
+	struct dentry *host_log_file; /* debugfs host logger */
+
+	struct dentry *fw_log_level_file; /* debugfs firmware log level */
+	struct dentry *fw_log_file; /* debugfs firmware logger */
+#endif
+};
+
 struct esp_adapter {
 	struct device           *dev;
 	struct wiphy            *wiphy;
@@ -91,6 +111,8 @@ struct esp_adapter {
 	uint8_t                 if_type;
 	atomic_t                state;
 	uint32_t                capabilities;
+
+	struct fw_version       version;
 
 	/* Possible types:
 	 * struct esp_sdio_context */
@@ -126,6 +148,8 @@ struct esp_adapter {
 	struct sk_buff_head     events_skb_q;
 	struct workqueue_struct *events_wq;
 	struct work_struct      events_work;
+
+	struct esp32_debugfs    debugfs;
 
 	unsigned long           state_flags;
 	int                     chipset;

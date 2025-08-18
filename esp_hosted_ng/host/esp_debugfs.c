@@ -1,3 +1,4 @@
+#include "esp.h"
 #include "utils.h"
 #include <linux/debugfs.h>
 #include <linux/module.h>
@@ -8,8 +9,6 @@
 #define LOG_LEVEL "log_level"
 #define VERSION "version"
 
-#define DEBUGFS_TODO 0
-
 #if DEBUGFS_TODO
 #define DEBUGFS_LOG_LEVEL "debugfs_log_level"
 #define HOST_LOGS "logs"
@@ -19,35 +18,8 @@
 
 #define LOG_BUFFER_SIZE 2048
 
-struct esp32_debugfs {
-	struct dentry *debugfs_dir;
-	struct dentry *log_level_file; /* log level for host dmesg */
-	struct dentry *version;
-#if DEBUGFS_TODO
-	struct dentry *host_log_level_file; /* log level for host logs in debugfs logger */
-	struct dentry *host_log_file; /* debugfs host logger */
-
-	struct dentry *fw_log_level_file; /* debugfs firmware log level */
-	struct dentry *fw_log_file; /* debugfs firmware logger */
-#endif
-};
-struct esp32_debugfs drv_debugfs;
-
-
 // Define a variable to store the logging level
 extern int log_level;
-
-#if DEBUGFS_TODO
-int debugfs_log_level;
-
-static char log_buffer[LOG_BUFFER_SIZE] = "";
-static size_t log_length = 0;
-static size_t write_pos = 0;
-#endif
-#ifndef VERSION_BUFFER_SIZE
-#define VERSION_BUFFER_SIZE 50
-#endif
-extern char version_str[VERSION_BUFFER_SIZE];
 
 // Read operation for the debugfs file
 static ssize_t log_level_read(struct file *file, char __user *buf, size_t count, loff_t *ppos)
@@ -62,6 +34,13 @@ static ssize_t log_level_read(struct file *file, char __user *buf, size_t count,
 
 static ssize_t version_read(struct file *file, char __user *buf, size_t count, loff_t *ppos)
 {
+	struct esp_adapter *adapter = file->private_data;
+	struct fw_version *ver = &adapter->version;
+	char version_str[VERSION_BUFFER_SIZE];
+
+	snprintf(version_str, VERSION_BUFFER_SIZE, "%s-%u.%u.%u.%u.%u",
+		ver->project_name, ver->major1, ver->major2, ver->minor, ver->revision_patch_1, ver->revision_patch_2);
+
 	return simple_read_from_buffer(buf, count, ppos, version_str, strlen(version_str));
 }
 
@@ -92,9 +71,11 @@ static ssize_t log_level_write(struct file *file, const char __user *buf, size_t
 // Read operation for the debugfs file
 static ssize_t debugfs_log_level_read(struct file *file, char __user *buf, size_t count, loff_t *ppos)
 {
+	struct esp_adapter *adapter = file->private_data;
+
 	// Convert the log level integer to a string
 	char level_str[32];
-	snprintf(level_str, sizeof(level_str), "%d\n", debugfs_log_level);
+	snprintf(level_str, sizeof(level_str), "%d\n", adapter->debugfs.debugfs_log_level);
 
 	// Copy the string to userspace
 	return simple_read_from_buffer(buf, count, ppos, level_str, strlen(level_str));
@@ -103,6 +84,7 @@ static ssize_t debugfs_log_level_read(struct file *file, char __user *buf, size_
 // Write operation for the debugfs file
 static ssize_t debugfs_log_level_write(struct file *file, const char __user *buf, size_t count, loff_t *ppos)
 {
+	struct esp_adapter *adapter = file->private_data;
 	char level_str[32];
 
 	// Read the user input
@@ -115,10 +97,10 @@ static ssize_t debugfs_log_level_write(struct file *file, const char __user *buf
 	level_str[count] = '\0';
 
 	// Convert the input string to an integer
-	if (kstrtoint(level_str, 10, &debugfs_log_level))
+	if (kstrtoint(level_str, 10, &adapter->debugfs.debugfs_log_level))
 		return -EINVAL;
 
-	esp_err("Updated debugfs log level to %d\n", debugfs_log_level);
+	esp_err("Updated debugfs log level to %d\n", adapter->debugfs.debugfs_log_level);
 
 	return count;
 }
@@ -126,14 +108,16 @@ static ssize_t debugfs_log_level_write(struct file *file, const char __user *buf
 // Read operation for the log output file
 static ssize_t log_output_read(struct file *file, char __user *user_buffer, size_t count, loff_t *ppos)
 {
+	struct esp_adapter *adapter = file->private_data;
+
 	ssize_t ret = 0;
-	if (log_length > 0) {
-		ret = simple_read_from_buffer(user_buffer, count, ppos, log_buffer, log_length);
+	if (adapter->debugfs.log_length > 0) {
+		ret = simple_read_from_buffer(user_buffer, count, ppos, adapter->debugfs.log_buffer, log_length);
 		if (ret > 0) {
 			// Update read position
 			*ppos += ret;
 			// Clear buffer if no more data is available
-			if (*ppos >= log_length) {
+			if (*ppos >= adapter->debugfs.log_length) {
 				log_length = 0;
 				write_pos = 0;
 			}
@@ -201,9 +185,9 @@ static const struct file_operations version_ops = {
 };
 
 // Module initialization function
-int debugfs_init(void)
+int debugfs_init(struct esp_adapter *adapter)
 {
-	struct esp32_debugfs *debugfs = &drv_debugfs;
+	struct esp32_debugfs *debugfs = &adapter->debugfs;
 	int ret = -ENODEV;
 	// Create debugfs directory
 	debugfs->debugfs_dir = debugfs_create_dir(DEBUGFS_DIR_NAME, NULL);
@@ -214,38 +198,44 @@ int debugfs_init(void)
 	}
 
 	// Create debugfs file
-	debugfs->log_level_file = debugfs_create_file(LOG_LEVEL, 0644, debugfs->debugfs_dir, NULL, &log_level_ops);
+	debugfs->log_level_file = debugfs_create_file(LOG_LEVEL, 0644, debugfs->debugfs_dir, adapter, &log_level_ops);
 	if (!debugfs->log_level_file) {
 		esp_err("Failed to create debugfs %s file\n", LOG_LEVEL);
 		goto cleanup;
 	}
 
-	debugfs->version = debugfs_create_file(VERSION, 0644, debugfs->debugfs_dir, NULL, &version_ops);
+	debugfs->version = debugfs_create_file(VERSION, 0644, debugfs->debugfs_dir, adapter, &version_ops);
 	if (!debugfs->version) {
 		esp_err("Failed to create debugfs %s file\n", VERSION);
 		goto cleanup;
 	}
 
 #if DEBUGFS_TODO
-	debugfs->host_log_level_file = debugfs_create_file(DEBUGFS_LOG_LEVEL, 0644, debugfs_dir, NULL, &debugfs_log_level_ops);
+	debugfs->log_buffer = kzalloc(LOG_BUFFER_SIZE, GFP_KERNEL);
+	if (!debugfs->log_buffer) {
+		esp_err("Failed to create debugfs log buffer\n");
+		goto cleanup;
+	}
+
+	debugfs->host_log_level_file = debugfs_create_file(DEBUGFS_LOG_LEVEL, 0644, debugfs_dir, adapter, &debugfs_log_level_ops);
 	if (!debugfs->debugfs_log_level_file) {
 		esp_err("Failed to create debugfs %s file\n", DEBUGFS_LOG_LEVEL);
 		goto cleanup;
 	}
 
-	debugfs->host_log_file = debugfs_create_file(HOST_LOGS, 0644, debugfs_dir, NULL, &debugfs_log_output_ops);
+	debugfs->host_log_file = debugfs_create_file(HOST_LOGS, 0644, debugfs_dir, adapter, &debugfs_log_output_ops);
 	if (!debugfs->host_log_file) {
 		esp_err("Failed to create debugfs %s file\n", HOST_LOGS);
 		goto cleanup;
 	}
 
-	debugfs->fw_log_file = debugfs_create_file(FW_LOGS, 0644, debugfs_dir, NULL, &debugfs_fw_log_output_ops);
+	debugfs->fw_log_file = debugfs_create_file(FW_LOGS, 0644, debugfs_dir, adapter, &debugfs_fw_log_output_ops);
 	if (!debugfs->fw_log_file) {
 		esp_err("Failed to create debugfs %s file\n", FW_LOGS);
 		goto cleanup;
 	}
 
-	debugfs->fw_log_level_file = debugfs_create_file(FW_LOGS_LEVEL, 0644, debugfs_dir, NULL, &debugfs_fw_log_output_ops);
+	debugfs->fw_log_level_file = debugfs_create_file(FW_LOGS_LEVEL, 0644, debugfs_dir, adapter, &debugfs_fw_log_output_ops);
 	if (!debugfs->fw_log_level_file) {
 		esp_err("Failed to create debugfs %s file\n", FW_LOGS_LEVEL);
 		goto cleanup;
@@ -254,13 +244,13 @@ int debugfs_init(void)
 #endif
 	return 0;
 cleanup:
-	debugfs_exit();
+	debugfs_exit(adapter);
 	return ret;
 }
 
-void debugfs_exit(void)
+void debugfs_exit(struct esp_adapter *adapter)
 {
-	struct esp32_debugfs *debugfs = &drv_debugfs;
+	struct esp32_debugfs *debugfs = &adapter->debugfs;
 #if DEBUGFS_TODO
 	// Remove debugfs file and directory
 	if (debugfs->fw_log_file)
@@ -271,6 +261,8 @@ void debugfs_exit(void)
 		debugfs_remove(debugfs->host_log_file);
 	if (debugfs->host_log_level_file)
 		debugfs_remove(debugfs->host_log_level_file);
+	if (debugfs->log_buffer)
+		kfree(debugfs->log_buffer);
 #endif
 	if (debugfs->log_level_file) {
 		debugfs_remove(debugfs->log_level_file);

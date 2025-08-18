@@ -33,8 +33,12 @@ void esp_logger(int level, const char *function, const char* format, ...);
 void esp_hex_dump(const char *prefix_str, const void *buf, size_t len);
 void esp_hex_dump_verbose(const char *prefix_str, const void *buf, size_t len);
 
-int debugfs_init(void);
-void debugfs_exit(void);
+struct esp_adapter;
+
+#define VERSION_BUFFER_SIZE 50
+
+int debugfs_init(struct esp_adapter *adapter);
+void debugfs_exit(struct esp_adapter *adapter);
 
 #define esp_err(format, ...) esp_logger(ESP_ERR, __func__, format, ##__VA_ARGS__)
 #define esp_warn(format, ...) esp_logger(ESP_WARNING, __func__, format, ##__VA_ARGS__)
