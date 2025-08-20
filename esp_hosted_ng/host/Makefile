@@ -1,6 +1,7 @@
 # Toolchain and kernel
 CROSS_COMPILE :=
-KERNEL := /lib/modules/$(shell uname -r)/build
+KERNELVER ?= $(shell uname -r)
+KERNEL ?= /lib/modules/$(KERNELVER)/build
 
 include $(KERNEL)/scripts/subarch.include
 ARCH ?= $(SUBARCH)
