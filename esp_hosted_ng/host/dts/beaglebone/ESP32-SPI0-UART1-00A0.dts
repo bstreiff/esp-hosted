@@ -1,0 +1,108 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Cape overlay for BeagleBone/BeagleBone Black
+ */
+
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/pinctrl/am33xx.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+
+/*
+ * Helper to show loaded overlays under: /proc/device-tree/chosen/overlays/
+ */
+&{/chosen} {
+	overlays {
+		ESP32-SPI0-UART1-00A0.kernel = __TIMESTAMP__;
+	};
+};
+
+/*
+ * Free up the pins used by the cape from the pinmux helpers.
+ */
+&ocp {
+	// spi pins
+	P9_17_pinmux { status = "disabled"; };	/* P9_17 (A16) spi0_cs0.spi0_cs0 */
+	P9_18_pinmux { status = "disabled"; };	/* P9_18 (B16) spi0_d1.spi0_d1 */
+	P9_21_pinmux { status = "disabled"; };	/* P9_21 (B17) spi0_d0.spi0_d0 */
+	P9_22_pinmux { status = "disabled"; };	/* P9_22 (A17) spi0_sclk.spi0_sclk */
+
+	// other gpio
+        // handshake
+	P9_11_pinmux { status = "disabled"; }; // gpio0[30]
+        // data ready
+	P9_12_pinmux { status = "disabled"; }; // gpio1[28]
+        // esp32 reset
+	P9_13_pinmux { status = "disabled"; }; // gpio0[31]
+
+	// UART1
+	P9_24_pinmux { status = "disabled"; }; // uart1 tx
+	P9_26_pinmux { status = "disabled"; }; // uart1 rx
+};
+
+&am33xx_pinmux {
+	bb_spi0_pins: pinmux_bb_spi0_pins {
+		pinctrl-single,pins = <
+			AM33XX_PADCONF(AM335X_PIN_SPI0_SCLK, PIN_INPUT, MUX_MODE0)		/* P9_22 (A17) spi0_sclk.spi0_sclk */
+			AM33XX_PADCONF(AM335X_PIN_SPI0_D0, PIN_INPUT, MUX_MODE0)		/* P9_21 (B17) spi0_d0.spi0_d0 */
+			AM33XX_PADCONF(AM335X_PIN_SPI0_D1, PIN_OUTPUT, MUX_MODE0)		/* P9_18 (B16) spi0_d1.spi0_d1 */
+			AM33XX_PADCONF(AM335X_PIN_SPI0_CS0, PIN_OUTPUT_PULLUP, MUX_MODE0)	/* P9_17 (A16) spi0_cs0.spi0_cs0 */
+		>;
+	};
+
+	bb_uart1_pins: pinmux_bb_uart1_pins {
+		pinctrl-single,pins = <
+			AM33XX_PADCONF(AM335X_PIN_UART1_TXD, PIN_OUTPUT, MUX_MODE0)		/* P9_24 (D15) uart1_txd.uart1_txd */
+			AM33XX_PADCONF(AM335X_PIN_UART1_RXD, PIN_INPUT, MUX_MODE0)		/* P9_26 (D16) uart1_txd.uart1_rxd */
+		>;
+	};
+
+	esp32_misc_pins: pinmux_esp32_misc_pins {
+		pinctrl-single,pins = <
+			// handshake pin (input irq)
+			AM33XX_PADCONF(AM335X_PIN_GPMC_WAIT0, PIN_INPUT, MUX_MODE7)		/* P9_11 (T17) gpmc_wait0.gpio0_30 */
+			// data ready (input irq)
+			AM33XX_PADCONF(AM335X_PIN_GPMC_BEN1, PIN_INPUT, MUX_MODE7)		/* P9_12 (U18) gpmc_ben1.gpio1_28 */
+			// reset (output and input)
+			AM33XX_PADCONF(AM335X_PIN_GPMC_WPN, PIN_INPUT, MUX_MODE7)		/* P9_13 (U17) gpmc_wpn.gpio0_31 */
+		>;
+	};
+
+};
+
+&spi0 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&bb_spi0_pins>;
+
+	wifi@0 {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		compatible = "espressif,esp32";
+	
+		reg = <0>;
+		spi-max-frequency = <30000000>;
+		spi-cpol;
+
+		reset-gpios = <&gpio0 31 GPIO_ACTIVE_LOW>;
+		handshake-gpios = <&gpio0 30 GPIO_ACTIVE_HIGH>;
+		dataready-gpios = <&gpio1 28 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+&uart1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&bb_uart1_pins>;
+
+	status = "okay";
+
+	bluetooth {
+		compatible = "espressif,esp32-bt";
+	};
+};

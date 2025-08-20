@@ -1,0 +1,73 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * HAT overlay for Raspberry Pi
+ *
+ * This device tree overlay configures a ESP32 with the following wiring:
+ *
+ * | Pin | RPi Name  | Function    |
+ * |-----|-----------|-------------|
+ * |  24 | SPI0 CS0  | Chip Select |
+ * |  23 | SPI0 SCLK | SPI Clock   |
+ * |  21 | SPI0 MISO | SPI MISO    |
+ * |  19 | SPI0 MOSI | SPI MOSI    |
+ * |  25 | Ground    | Ground      |
+ * |  15 | GPIO 22   | Handshake   |
+ * |  13 | GPIO 27   | Data Ready  |
+ * |  31 | GPIO 6    | Reset       |
+ */
+
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/pinctrl/bcm2835.h>
+
+/{
+	compatible = "bcrm,bcm2835";
+
+	/* disable spidev */
+	fragment@0 {
+		target = <&spidev0>;
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+
+	fragment@1 {
+		target = <&gpio>;
+		__overlay__ {
+			esp32_pins: esp32_pins {
+				/* ESP32 Reset on pin 31 (GPIO 6) */
+				/* Handshake on pin 15 (GPIO 22) */
+				/* Data Ready on pin 13 (GPIO 27) */
+				brcm,pins = <6 22 27>; /* gpio number */
+				brcm,function = <BCM2835_FSEL_GPIO_IN BCM2835_FSEL_GPIO_IN BCM2835_FSEL_GPIO_IN>;
+				brcm,pull = <BCM2835_PUD_OFF BCM2835_PUD_OFF BCM2835_PUD_OFF>;
+			};
+		};
+	};
+
+	fragment@2 {
+		target = <&spi0>;
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "okay";
+
+			wifi@0 {
+				compatible = "espressif,esp32";
+
+				reg = <0>;
+				spi-max-frequency = <30000000>;
+				spi-cpol;
+
+				pinctrl-names = "default";
+				pinctrl-0 = <&esp32_pins>;
+
+				reset-gpios = <&gpio 6 GPIO_ACTIVE_LOW>;
+				handshake-gpios = <&gpio 22 GPIO_ACTIVE_HIGH>;
+				dataready-gpios = <&gpio 27 GPIO_ACTIVE_HIGH>;
+			};
+		};
+	};
+};
